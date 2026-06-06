@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+@layer base {
+  [tabindex="-1"]:focus {
+    outline: none;
+  }
+}

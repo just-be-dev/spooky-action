@@ -1,0 +1,9 @@
+bun.lock
+  ai_agent 7,9,12,14,17,22-41,44-57,62-79,82-106,109-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "0ef15be406dd43f71dcff8d0eda466405e28f10e",
+  "prompts": {}
+}

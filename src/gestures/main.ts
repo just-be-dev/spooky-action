@@ -1,97 +1,140 @@
 // Gesture lab server: serves the tracker page and gesture definitions
 // (defs/*.json), and bridges wire messages from the browser to the native
-// macOS overlay (../control/overlay.swift), which draws rings and posts
-// real clicks.
+// macOS overlay (../control/overlay.ts → overlay.swift), which draws rings
+// and posts real clicks.
+//
+// Bun.serve stays in charge of HTTP/WS (it bundles index.html); its
+// callbacks are the Effect boundary and run effects with runSync/runPromise.
 import index from "./index.html";
-import { $, Glob } from "bun";
+import { Glob } from "bun";
+import { Effect, Schema } from "effect";
+import { BunRuntime } from "@effect/platform-bun";
+import { Overlay } from "../control/overlay";
 
-const DIR = import.meta.dir;
-const BIN = `${DIR}/../control/overlay-bin`;
-const SRC = `${DIR}/../control/overlay.swift`;
-const DEFS = `${DIR}/defs`;
+const DEFS = `${import.meta.dir}/defs`;
 
-// Compile the Swift overlay on first run (or when the source is newer)
-const binFile = Bun.file(BIN);
-const needsBuild =
-  !(await binFile.exists()) ||
-  binFile.lastModified < Bun.file(SRC).lastModified;
-if (needsBuild) {
-  console.log("Compiling overlay.swift…");
-  await $`swiftc -O ${SRC} -o ${BIN}`;
-}
+export class DefsLoadError extends Schema.TaggedErrorClass<DefsLoadError>()(
+  "DefsLoadError",
+  { file: Schema.String, cause: Schema.Defect }
+) {}
 
-let overlay: ReturnType<typeof Bun.spawn> | null = null;
-function getOverlay() {
-  if (!overlay || overlay.killed) {
-    overlay = Bun.spawn([BIN], {
-      stdin: "pipe",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-  }
-  return overlay;
-}
-
-function command(line: string) {
-  const proc = getOverlay();
-  proc.stdin.write(line + "\n");
-  proc.stdin.flush();
-}
+// Wire messages from the browser: gesture-engine emits plus tracker
+// housekeeping. Anything that doesn't decode is logged and dropped.
+const WireMessage = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("circle"),
+    id: Schema.String,
+    x: Schema.Number,
+    y: Schema.Number,
+    r: Schema.Number,
+  }),
+  Schema.Struct({ type: Schema.Literal("hide"), id: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("hideall") }),
+  Schema.Struct({
+    type: Schema.Literal("click"),
+    x: Schema.Number,
+    y: Schema.Number,
+  }),
+]);
+const decodeWire = Schema.decodeUnknownEffect(Schema.fromJsonString(WireMessage));
 
 // Gesture definitions are read fresh on every request, so editing a
 // defs/*.json and pressing "r" in the page picks up changes live.
-async function loadDefs() {
+const loadDefs = Effect.fn("loadDefs")(function* () {
+  const names = yield* Effect.tryPromise({
+    try: () => Array.fromAsync(new Glob("*.json").scan(DEFS)),
+    catch: (cause) => new DefsLoadError({ file: DEFS, cause }),
+  });
   const defs: unknown[] = [];
-  for await (const name of new Glob("*.json").scan(DEFS)) {
-    defs.push(await Bun.file(`${DEFS}/${name}`).json());
+  for (const name of names) {
+    defs.push(
+      yield* Effect.tryPromise({
+        try: () => Bun.file(`${DEFS}/${name}`).json(),
+        catch: (cause) => new DefsLoadError({ file: name, cause }),
+      })
+    );
   }
   return defs;
-}
-
-const server = Bun.serve({
-  port: 7900,
-  routes: {
-    "/": index,
-    "/api/gestures": {
-      GET: async () => Response.json(await loadDefs()),
-    },
-  },
-  fetch(req, server) {
-    if (new URL(req.url).pathname === "/ws" && server.upgrade(req)) return;
-    return new Response("Not found", { status: 404 });
-  },
-  websocket: {
-    open() {
-      getOverlay(); // launch the overlay as soon as the tracker connects
-    },
-    message(_ws, raw) {
-      const msg = JSON.parse(String(raw));
-      switch (msg.type) {
-        case "circle":
-          command(`circle ${msg.id} ${msg.x} ${msg.y} ${msg.r}`);
-          break;
-        case "hide":
-          command(`hide ${msg.id}`);
-          break;
-        case "hideall":
-          command("hideall");
-          break;
-        case "click":
-          command(`click ${msg.x} ${msg.y}`);
-          break;
-        default:
-          console.warn("Unknown wire message:", msg.type);
-      }
-    },
-    close() {
-      command("hideall"); // tracker tab closed — don't leave stale rings up
-    },
-  },
 });
 
-process.on("exit", () => overlay?.kill());
+const program = Effect.gen(function* () {
+  const overlay = yield* Overlay;
 
-console.log(`Gesture lab running — open ${server.url} to start tracking`);
-console.log(
-  "Note: clicking requires Accessibility permission for your terminal app"
-);
+  // Map one decoded wire message onto an overlay stdin command
+  const handleWire = Effect.fn("handleWire")(function* (raw: string | Buffer) {
+    const msg = yield* decodeWire(String(raw));
+    switch (msg.type) {
+      case "circle":
+        return yield* overlay.command(
+          `circle ${msg.id} ${msg.x} ${msg.y} ${msg.r}`
+        );
+      case "hide":
+        return yield* overlay.command(`hide ${msg.id}`);
+      case "hideall":
+        return yield* overlay.command("hideall");
+      case "click":
+        return yield* overlay.command(`click ${msg.x} ${msg.y}`);
+    }
+  });
+
+  const server = yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      Bun.serve({
+        port: 7900,
+        routes: {
+          "/": index,
+          "/api/gestures": {
+            GET: () =>
+              Effect.runPromise(
+                loadDefs().pipe(
+                  Effect.map((defs) => Response.json(defs)),
+                  Effect.catchTag("DefsLoadError", (err) =>
+                    Effect.logError("Failed to load gesture defs", err).pipe(
+                      Effect.map(() =>
+                        Response.json(
+                          { error: `failed to load ${err.file}` },
+                          { status: 500 }
+                        )
+                      )
+                    )
+                  )
+                )
+              ),
+          },
+        },
+        fetch(req, server) {
+          if (new URL(req.url).pathname === "/ws" && server.upgrade(req)) return;
+          return new Response("Not found", { status: 404 });
+        },
+        websocket: {
+          open() {
+            // launch the overlay as soon as the tracker connects
+            Effect.runSync(overlay.launch);
+          },
+          message(_ws, raw) {
+            Effect.runSync(
+              handleWire(raw).pipe(
+                Effect.catch((err) =>
+                  Effect.logWarning("Unknown wire message", err)
+                )
+              )
+            );
+          },
+          close() {
+            // tracker tab closed — don't leave stale rings up
+            Effect.runSync(overlay.command("hideall"));
+          },
+        },
+      })
+    ),
+    (server) => Effect.promise(() => server.stop())
+  );
+
+  yield* Effect.log(`Gesture lab running — open ${server.url} to start tracking`);
+  yield* Effect.log(
+    "Note: clicking requires Accessibility permission for your terminal app"
+  );
+  return yield* Effect.never;
+});
+
+BunRuntime.runMain(program.pipe(Effect.scoped, Effect.provide(Overlay.layer)));

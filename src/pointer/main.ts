@@ -1,79 +1,90 @@
 // Pinch pointer: serves the hand-tracking page and bridges pinch events
-// over WebSocket to the native macOS overlay (../control/overlay.swift),
-// which draws the on-screen ring and posts real clicks.
+// over WebSocket to the native macOS overlay (../control/overlay.ts →
+// overlay.swift), which draws the on-screen ring and posts real clicks.
+//
+// Bun.serve stays in charge of HTTP/WS (it bundles index.html); its
+// callbacks are the Effect boundary and run effects with Effect.runSync.
 import index from "./index.html";
-import { $ } from "bun";
+import { Effect, Schema } from "effect";
+import { BunRuntime } from "@effect/platform-bun";
+import { Overlay } from "../control/overlay";
 
-const DIR = import.meta.dir;
-const BIN = `${DIR}/../control/overlay-bin`;
-const SRC = `${DIR}/../control/overlay.swift`;
+// Wire messages from the tracker tab. Anything that doesn't decode is
+// logged and dropped.
+const WireMessage = Schema.Union([
+  Schema.Struct({
+    t: Schema.Literal("circle"),
+    x: Schema.Number,
+    y: Schema.Number,
+    r: Schema.Number,
+  }),
+  Schema.Struct({ t: Schema.Literal("hide") }),
+  Schema.Struct({
+    t: Schema.Literal("click"),
+    x: Schema.Number,
+    y: Schema.Number,
+  }),
+]);
+const decodeWire = Schema.decodeUnknownEffect(Schema.fromJsonString(WireMessage));
 
-// Compile the Swift overlay on first run (or when the source is newer)
-const binFile = Bun.file(BIN);
-const needsBuild =
-  !(await binFile.exists()) ||
-  binFile.lastModified < Bun.file(SRC).lastModified;
-if (needsBuild) {
-  console.log("Compiling overlay.swift…");
-  await $`swiftc -O ${SRC} -o ${BIN}`;
-}
+const program = Effect.gen(function* () {
+  const overlay = yield* Overlay;
 
-let overlay: ReturnType<typeof Bun.spawn> | null = null;
-function getOverlay() {
-  if (!overlay || overlay.killed) {
-    overlay = Bun.spawn([BIN], {
-      stdin: "pipe",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-  }
-  return overlay;
-}
+  // Map one decoded wire message onto an overlay stdin command. The shared
+  // overlay supports multiple named rings; the pointer only ever drives one,
+  // so it always uses the id "ptr".
+  const handleWire = Effect.fn("handleWire")(function* (raw: string | Buffer) {
+    const msg = yield* decodeWire(String(raw));
+    switch (msg.t) {
+      case "circle":
+        return yield* overlay.command(`circle ptr ${msg.x} ${msg.y} ${msg.r}`);
+      case "hide":
+        return yield* overlay.command("hide ptr");
+      case "click":
+        return yield* overlay.command(`click ${msg.x} ${msg.y}`);
+    }
+  });
 
-function command(line: string) {
-  const proc = getOverlay();
-  proc.stdin.write(line + "\n");
-  proc.stdin.flush();
-}
+  const server = yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      Bun.serve({
+        port: 7900,
+        routes: {
+          "/": index,
+        },
+        fetch(req, server) {
+          if (new URL(req.url).pathname === "/ws" && server.upgrade(req)) return;
+          return new Response("Not found", { status: 404 });
+        },
+        websocket: {
+          open() {
+            // launch the overlay as soon as the tracker connects
+            Effect.runSync(overlay.launch);
+          },
+          message(_ws, raw) {
+            Effect.runSync(
+              handleWire(raw).pipe(
+                Effect.catch((err) =>
+                  Effect.logWarning("Unknown wire message", err)
+                )
+              )
+            );
+          },
+          close() {
+            // tracker tab closed — don't leave a stale ring up
+            Effect.runSync(overlay.command("hideall"));
+          },
+        },
+      })
+    ),
+    (server) => Effect.promise(() => server.stop())
+  );
 
-const server = Bun.serve({
-  port: 7900,
-  routes: {
-    "/": index,
-  },
-  fetch(req, server) {
-    if (new URL(req.url).pathname === "/ws" && server.upgrade(req)) return;
-    return new Response("Not found", { status: 404 });
-  },
-  websocket: {
-    open() {
-      getOverlay(); // launch the overlay as soon as the tracker connects
-    },
-    message(_ws, raw) {
-      const msg = JSON.parse(String(raw));
-      // The shared overlay supports multiple named rings; the pointer only
-      // ever drives one, so it always uses the id "ptr".
-      switch (msg.t) {
-        case "circle":
-          command(`circle ptr ${msg.x} ${msg.y} ${msg.r}`);
-          break;
-        case "hide":
-          command("hide ptr");
-          break;
-        case "click":
-          command(`click ${msg.x} ${msg.y}`);
-          break;
-      }
-    },
-    close() {
-      command("hideall"); // tracker tab closed — don't leave a stale ring up
-    },
-  },
+  yield* Effect.log(`Pinch pointer running — open ${server.url} to start tracking`);
+  yield* Effect.log(
+    "Note: clicking requires Accessibility permission for your terminal app"
+  );
+  return yield* Effect.never;
 });
 
-process.on("exit", () => overlay?.kill());
-
-console.log(`Pinch pointer running — open ${server.url} to start tracking`);
-console.log(
-  "Note: clicking requires Accessibility permission for your terminal app"
-);
+BunRuntime.runMain(program.pipe(Effect.scoped, Effect.provide(Overlay.layer)));

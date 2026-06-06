@@ -3,16 +3,18 @@
 Data-driven gesture system. Detection runs in the browser (MediaPipe hands +
 faces, multiple people, persistent entity IDs), gestures are **declarative
 JSON** evaluated by a small engine, and emitted events go over WebSocket to a
-Bun server that drives a native macOS overlay (rings + real clicks).
+Bun server that drives a native macOS overlay (rings + real clicks). The UI
+is a Foldkit app in `src/ui`, served by Vite.
 
 ```
-camera → tracker.ts → engine.ts (defs/*.json) → WS → main.ts → ../control/overlay.swift → macOS
+camera → src/ui (Foldkit) → engine.ts (defs/*.json) → WS → main.ts → ../control/overlay.swift → macOS
 ```
 
 ## Run
 
 ```sh
-bun --hot src/gestures/main.ts   # http://localhost:7900
+bun run server   # backend on :7900 (defs API + overlay WS bridge)
+bun run dev      # Vite dev server; open the printed URL (proxies /api and /ws to :7900)
 ```
 
 Clicking requires Accessibility permission for your terminal app.

@@ -1,11 +1,11 @@
-// Gesture lab server: serves the tracker page and gesture definitions
-// (defs/*.json), and bridges wire messages from the browser to the native
-// macOS overlay (../control/overlay.ts → overlay.swift), which draws rings
-// and posts real clicks.
+// Gesture lab backend: serves gesture definitions (defs/*.json) and bridges
+// wire messages from the browser to the native macOS overlay
+// (../control/overlay.ts → overlay.swift), which draws rings and posts real
+// clicks. The UI is the Foldkit app in src/ui, served by Vite, which proxies
+// /api and /ws here.
 //
-// Bun.serve stays in charge of HTTP/WS (it bundles index.html); its
-// callbacks are the Effect boundary and run effects with runSync/runPromise.
-import index from "./index.html";
+// Bun.serve stays in charge of HTTP/WS; its callbacks are the Effect
+// boundary and run effects with runSync/runPromise.
 import { Glob } from "bun";
 import { Effect, Schema } from "effect";
 import { BunRuntime } from "@effect/platform-bun";
@@ -82,7 +82,6 @@ const program = Effect.gen(function* () {
       Bun.serve({
         port: 7900,
         routes: {
-          "/": index,
           "/api/gestures": {
             GET: () =>
               Effect.runPromise(
@@ -130,7 +129,9 @@ const program = Effect.gen(function* () {
     (server) => Effect.promise(() => server.stop())
   );
 
-  yield* Effect.log(`Gesture lab running — open ${server.url} to start tracking`);
+  yield* Effect.log(
+    `Gesture lab backend on ${server.url} — run \`bun run dev\` and open the Vite URL to start tracking`
+  );
   yield* Effect.log(
     "Note: clicking requires Accessibility permission for your terminal app"
   );

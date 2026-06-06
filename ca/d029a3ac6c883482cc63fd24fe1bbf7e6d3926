@@ -1,0 +1,21 @@
+src/gestures/engine.ts
+  s_a7ea625762b2fa::t_da28ed306c14ca 1-2,12-19,23-32,120-121,273-283,290-323,345-349,363,371,377,385,398-399,412,417,419,430,434-445,471-482,484-486,489,495,547,555,570,578
+src/gestures/engine.test.ts
+  s_a7ea625762b2fa::t_00d76e8e72c5fc 2,6,10,14,18-24,27-30,34-38,42,48-50,53-54,60-65,68-71,82-85,95,105,111-112,124-126,128-129,134,175,185,198,205,209-213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "cad029a3ac6c883482cc63fd24fe1bbf7e6d3926",
+  "prompts": {},
+  "sessions": {
+    "s_a7ea625762b2fa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0e7da033-8d1d-4de0-aed7-5f8b3c5966d4",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

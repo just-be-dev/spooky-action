@@ -1,0 +1,22 @@
+src/pointer/tracker.ts
+  s_a7ea625762b2fa::t_4015f4c22b93fe 1-4,6,34-51,53,61,63-67,69,71-77,79,82-89,92-95,104,106-107,111-118,121-130,132-139,142-143,151-152,161-180,182-259
+src/gestures/tracker.ts
+  s_a7ea625762b2fa::t_dc28e92874816f 5-7,13,15,18,38-55,64,66-70,72-73,77-80,90,92,100-122,124-146,148-151,153-184,187-198,200-212,216-229,231-237,239-241,243,246-250,252,255-271,274-282,314,358-363,391-402
+  s_a7ea625762b2fa::t_aa0c49b207662b 123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "859d004527a9a1db9cd5db84665052f5949c246f",
+  "prompts": {},
+  "sessions": {
+    "s_a7ea625762b2fa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0e7da033-8d1d-4de0-aed7-5f8b3c5966d4",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

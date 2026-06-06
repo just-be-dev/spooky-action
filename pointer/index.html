@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Pinch Pointer</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        background: #111;
+        color: #eee;
+        font-family: system-ui, sans-serif;
+      }
+      #stage {
+        position: relative;
+      }
+      video,
+      canvas {
+        width: 480px;
+        height: 360px;
+        border-radius: 12px;
+        transform: scaleX(-1); /* mirror so it feels natural */
+      }
+      canvas {
+        position: absolute;
+        inset: 0;
+      }
+      #status {
+        font-size: 20px;
+        font-weight: 600;
+        padding: 6px 20px;
+        border-radius: 999px;
+        background: #333;
+        transition: background 0.1s;
+      }
+      #status.pinching {
+        background: #16a34a;
+      }
+      p {
+        max-width: 480px;
+        color: #999;
+        font-size: 14px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay" width="480" height="360"></canvas>
+    </div>
+    <div id="status">Loading model…</div>
+    <p>
+      Bring thumb and index finger together — a circle appears on your screen
+      and shrinks as you close them. Completing the pinch clicks (one hand in
+      view only).
+    </p>
+    <script type="module" src="./tracker.ts"></script>
+  </body>
+</html>

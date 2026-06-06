@@ -6,13 +6,13 @@ JSON** evaluated by a small engine, and emitted events go over WebSocket to a
 Bun server that drives a native macOS overlay (rings + real clicks).
 
 ```
-camera → tracker.ts → engine.ts (defs/*.json) → WS → main.ts → overlay.swift → macOS
+camera → tracker.ts → engine.ts (defs/*.json) → WS → main.ts → ../control/overlay.swift → macOS
 ```
 
 ## Run
 
 ```sh
-bun --hot gestures/main.ts   # http://localhost:7900
+bun --hot src/gestures/main.ts   # http://localhost:7900
 ```
 
 Clicking requires Accessibility permission for your terminal app.
@@ -87,14 +87,15 @@ state. The server maps types to overlay commands:
 | `{type:"click", x, y}`      | `click <x> <y>`          | real left click + flash      |
 
 New OS-side capabilities = add a wire type in `main.ts` + a stdin command in
-`overlay.swift`; gestures can then emit it from data with no engine changes.
+`../control/overlay.swift`; gestures can then emit it from data with no
+engine changes.
 
 ## Testing
 
 The engine is pure (no DOM/MediaPipe), so defs are testable:
 
 ```sh
-bun test gestures/
+bun test src/gestures/
 ```
 
 `engine.test.ts` runs the real `pinch-click.json` through synthetic frames

@@ -8,13 +8,13 @@ ring's position. Clicks only fire when exactly one hand is in view.
 ## Run
 
 ```sh
-bun pointer/main.ts
+bun src/pointer/main.ts
 ```
 
 Then open http://localhost:7900 and grant camera access. Keep that tab
 open — it does the hand tracking and streams pinch state to the server,
-which drives a native transparent overlay (`overlay.swift`, compiled
-automatically on first run).
+which drives a native transparent overlay (`src/control/overlay.swift`,
+shared with the gesture lab and compiled automatically on first run).
 
 ## Permissions
 
@@ -24,7 +24,7 @@ automatically on first run).
   Security → Accessibility. The ring still renders without it; only
   clicks need it.
 
-## Tuning (pointer/tracker.ts)
+## Tuning (tracker.ts)
 
 - `SHOW` / `CLICK` / `REARM` — pinch thresholds (relative to hand size)
 - `R_MIN` / `R_MAX` — on-screen ring radius range

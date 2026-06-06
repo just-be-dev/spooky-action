@@ -1,4 +1,5 @@
-// Transparent click-through overlay + synthetic clicks for the gesture lab.
+// Transparent click-through overlay + synthetic clicks, shared by the
+// gesture lab (src/gestures) and the pinch pointer (src/pointer).
 // Supports multiple named rings so several gesture instances (two hands,
 // a face gesture, …) can each draw their own. Commands on stdin, one per line:
 //   circle <id> <nx> <ny> <r>   show/update ring <id> at normalized coords, radius px

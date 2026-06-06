@@ -1,15 +1,20 @@
 {
   "name": "collabspace",
-  "module": "index.ts",
+  "module": "src/demo/index.ts",
   "type": "module",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "prepare": "effect-tsgo patch"
   },
-  "peerDependencies": {
-    "typescript": "^5"
+  "devDependencies": {
+    "@effect/tsgo": "^0.5.2",
+    "@types/bun": "latest",
+    "@typescript/native-preview": "^7.0.0-dev.20260509.2"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^0.10.35"
+    "@effect/platform-bun": "4.0.0-beta.64",
+    "@mediapipe/tasks-vision": "^0.10.35",
+    "effect": "4.0.0-beta.64"
   }
 }

@@ -105,6 +105,25 @@ bun --hot ./index.ts
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.md`.
 
+## Foldkit UI (`src/ui`)
+
+The browser UI is a Foldkit app (Elm architecture on Effect): `src/ui/main.ts`
+holds the pure definitions (Model, Message, init, update, view, Subscriptions,
+Managed Resources); `src/ui/entry.ts` boots the runtime. It is served by Vite
+(`bun run dev`), which proxies `/api` and `/ws` to the Bun backend
+(`bun run server`, port 7900). This is the one place Vite is used instead of
+`Bun.serve` HTML bundling — Foldkit's tooling (`@foldkit/vite-plugin`,
+devtools MCP, Tailwind) is Vite-based.
+
+`repos/foldkit` is the vendored Foldkit repo (git subtree, read-only
+reference — never import from it). `repos/foldkit/examples/` and
+`repos/foldkit/AGENTS.md`/`CLAUDE.md` are the canonical references for
+conventions: Schema-typed Models, `m()`/`ts()` constructors, verb-first
+past-tense Messages (never `NoOp`), `evo()` for updates, `Match.tagsExhaustive`,
+`Option` over null, Commands for side effects, Managed Resources for
+model-driven lifecycles. Test update logic with `foldkit/test` Story tests
+(`bun run test`, vitest + happy-dom).
+
 ## Effect Best Practices
 
 **IMPORTANT:** Always consult effect-solutions before writing Effect code.

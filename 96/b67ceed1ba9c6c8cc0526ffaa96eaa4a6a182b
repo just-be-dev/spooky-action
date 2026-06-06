@@ -1,0 +1,21 @@
+tsconfig.json
+  s_02b7b3650b9eb1::t_f44428ec067b43 2,5,11,29-33
+CLAUDE.md
+  s_02b7b3650b9eb1::t_943573e560510d 107-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "96b67ceed1ba9c6c8cc0526ffaa96eaa4a6a182b",
+  "prompts": {},
+  "sessions": {
+    "s_02b7b3650b9eb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "83b18014-b4b3-4f79-929a-8edf46263da9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

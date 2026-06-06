@@ -1,0 +1,22 @@
+src/gestures/main.ts
+  s_e7439abae6cce7::t_3d3fb096bd7cc8 1-5,7-8
+  s_e7439abae6cce7::t_5633535c71b8db 132-134
+src/gestures/README.md
+  s_e7439abae6cce7::t_4366facb9a4f5e 6-7,10,16-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "a46bdeee3fd69d439e9746dda32d4e12cf734be1",
+  "prompts": {},
+  "sessions": {
+    "s_e7439abae6cce7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad78d05-daff-4417-8f18-c33aaa5fec82",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

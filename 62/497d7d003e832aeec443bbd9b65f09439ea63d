@@ -1,0 +1,63 @@
+gestures/defs/mouth-ring.json
+  s_6a57242994071e::t_624e5b7c689e91 1-24
+gestures/tracker.ts
+  s_6a57242994071e::t_3e0ef48de17268 269
+  s_6a57242994071e::t_73b9b3a55681d8 1-268,270-296
+pointer/overlay.swift
+  s_6a57242994071e::t_d85aa9659591e1 1-92
+gestures/engine.test.ts
+  s_6a57242994071e::t_8458211ef9cc39 1-193
+index.ts
+  s_6a57242994071e::t_1093039d678c3a 4
+  s_6a57242994071e::t_b84c81aba2ab71 1-3,5-14
+pointer/index.html
+  s_6a57242994071e::t_70f49ff43039bb 1-65
+package.json
+  s_6a57242994071e::t_8195510ac57e7c 11-13
+pointer/README.md
+  s_6a57242994071e::t_48a690c5a27f61 1-31
+gestures/README.md
+  s_6a57242994071e::t_78c6fc57c5e9f3 1-101
+gestures/engine.ts
+  s_6a57242994071e::t_26367b4985e7e7 1-500
+gestures/defs/pinch-click.json
+  s_6a57242994071e::t_370f6d430997e2 1-35
+gestures/main.ts
+  s_6a57242994071e::t_6ed530a15513cc 1-96
+pointer/tracker.ts
+  s_6a57242994071e::t_d4ab0fe6092e44 1-177
+.gitignore
+  s_6a57242994071e::t_279673270cfd2c 36
+  s_6a57242994071e::t_f8bfe4afef0e1d 35
+gestures/landmarks.ts
+  s_6a57242994071e::t_7de06e9d519df7 1-46
+pointer/main.ts
+  s_6a57242994071e::t_60b4a0192b6619 1-77
+gestures/index.html
+  s_6a57242994071e::t_116c597f7fe1e5 1-65
+gestures/overlay.swift
+  s_6a57242994071e::t_26475d79cbffb2 1-115
+index.html
+  s_6a57242994071e::t_42c969e02f3b30 1-54
+frontend.ts
+  s_6a57242994071e::t_4f2d78a0ea46c0 28,30,35,38-40,42-44,46-47,61-62,156,163-165,168,171,175,182,242,246,248-251,253,256,269
+  s_6a57242994071e::t_0a455b157442e1 6-11,13-17,31-34,41,48,63,91-96,117-124,126-130,157-162,166-167,169-170,172-174,176-181,183-186,234,254-255,270-275
+  s_6a57242994071e::t_c9eb5900d0fab9 134-135,145,259-261
+  s_6a57242994071e::t_302ad8e6bffa01 1-5,12,18-27,29,36-37,45,49-60,64-90,97-116,125,131-133,136-144,146-155,187-233,235-241,243-245,247,252,257-258,262-268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "62497d7d003e832aeec443bbd9b65f09439ea63d",
+  "prompts": {},
+  "sessions": {
+    "s_6a57242994071e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "27419eb5-644b-4a65-89b0-5d5765e07d43",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

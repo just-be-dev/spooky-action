@@ -1,0 +1,28 @@
+[install]
+# Exempt fast-moving deps from the global minimumReleaseAge (~/.bunfig.toml).
+# Bun matches these exactly (no globs), so platform binaries are listed too.
+minimumReleaseAgeExcludes = [
+  "effect",
+  "@effect/language-service",
+  "@effect/platform-browser",
+  "@effect/platform-bun",
+  "@effect/tsgo",
+  "@effect/tsgo-darwin-arm64",
+  "@effect/tsgo-darwin-x64",
+  "@effect/tsgo-linux-arm",
+  "@effect/tsgo-linux-arm64",
+  "@effect/tsgo-linux-x64",
+  "@effect/tsgo-win32-arm64",
+  "@effect/tsgo-win32-x64",
+  "foldkit",
+  "@foldkit/devtools-mcp",
+  "@foldkit/vite-plugin",
+  "@typescript/native-preview",
+  "@typescript/native-preview-darwin-arm64",
+  "@typescript/native-preview-darwin-x64",
+  "@typescript/native-preview-linux-arm",
+  "@typescript/native-preview-linux-arm64",
+  "@typescript/native-preview-linux-x64",
+  "@typescript/native-preview-win32-arm64",
+  "@typescript/native-preview-win32-x64",
+]

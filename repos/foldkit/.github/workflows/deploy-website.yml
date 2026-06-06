@@ -1,0 +1,139 @@
+name: Deploy Website to Vercel
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/website/**'
+      - 'packages/foldkit/**'
+      - 'packages/vite-plugin-foldkit/**'
+      - 'examples/**'
+      - 'scripts/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/deploy-website.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build core packages
+        run: pnpm --filter foldkit --filter @foldkit/vite-plugin... build
+
+      - name: Build examples
+        run: pnpm build:examples
+
+      - name: Build website
+        run: pnpm build:website
+
+      - name: Install Playwright chromium
+        run: pnpm --filter website exec playwright install --with-deps chromium
+
+      - name: Prerender
+        run: pnpm --filter website prerender
+
+      - name: Prepare Vercel output
+        run: |
+          mkdir -p .vercel/output/static
+          cp -r packages/website/dist/* .vercel/output/static/
+          cat > .vercel/output/config.json << 'EOF'
+          {
+            "version": 3,
+            "routes": [
+              {
+                "src": "^/og/(.*)\\.png$",
+                "headers": {
+                  "Content-Type": "image/png",
+                  "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400"
+                },
+                "continue": true
+              },
+              {
+                "src": "^/$",
+                "headers": {
+                  "Link": "</sitemap.xml>; rel=\"sitemap\", </get-started/manifesto>; rel=\"about\", </get-started/getting-started>; rel=\"help\", </example-apps>; rel=\"related\", </ai/overview>; rel=\"describedby\""
+                },
+                "continue": true
+              },
+              {
+                "src": "^/playground/.*",
+                "headers": {
+                  "Cross-Origin-Embedder-Policy": "credentialless",
+                  "Cross-Origin-Opener-Policy": "same-origin"
+                },
+                "continue": true
+              },
+              {
+                "src": ".*",
+                "headers": {
+                  "Cross-Origin-Resource-Policy": "same-origin"
+                },
+                "continue": true
+              },
+              {
+                "src": "^/assets/(.*)",
+                "headers": {
+                  "Cache-Control": "public, max-age=31536000, immutable"
+                },
+                "continue": true
+              },
+              {
+                "src": "^/([^.]*)$",
+                "headers": {
+                  "Cache-Control": "public, max-age=0, must-revalidate"
+                },
+                "continue": true
+              },
+              { "src": "^/manifesto$", "status": 308, "headers": { "Location": "/get-started/manifesto" } },
+              { "src": "^/manifesto\\.md$", "status": 308, "headers": { "Location": "/get-started/manifesto.md" } },
+              { "src": "^/getting-started$", "status": 308, "headers": { "Location": "/get-started/getting-started" } },
+              { "src": "^/getting-started\\.md$", "status": 308, "headers": { "Location": "/get-started/getting-started.md" } },
+              { "src": "^/why-no-jsx$", "status": 308, "headers": { "Location": "/faq/why-no-jsx" } },
+              { "src": "^/why-no-jsx\\.md$", "status": 308, "headers": { "Location": "/faq/why-no-jsx.md" } },
+              { "src": "^/what-about-ssr$", "status": 308, "headers": { "Location": "/faq/what-about-ssr" } },
+              { "src": "^/what-about-ssr\\.md$", "status": 308, "headers": { "Location": "/faq/what-about-ssr.md" } },
+              { "src": "^/coming-from-react$", "status": 308, "headers": { "Location": "/react/coming-from-react" } },
+              { "src": "^/coming-from-react\\.md$", "status": 308, "headers": { "Location": "/react/coming-from-react.md" } },
+              { "src": "^/foldkit-vs-react-side-by-side$", "status": 308, "headers": { "Location": "/react/foldkit-vs-react-side-by-side" } },
+              { "src": "^/foldkit-vs-react-side-by-side\\.md$", "status": 308, "headers": { "Location": "/react/foldkit-vs-react-side-by-side.md" } },
+              { "src": "^/routing-and-navigation$", "status": 308, "headers": { "Location": "/core/routing-and-navigation" } },
+              { "src": "^/routing-and-navigation\\.md$", "status": 308, "headers": { "Location": "/core/routing-and-navigation.md" } },
+              { "src": "^/field-validation$", "status": 308, "headers": { "Location": "/core/field-validation" } },
+              { "src": "^/field-validation\\.md$", "status": 308, "headers": { "Location": "/core/field-validation.md" } },
+              { "src": "^/project-organization$", "status": 308, "headers": { "Location": "/patterns/project-organization" } },
+              { "src": "^/project-organization\\.md$", "status": 308, "headers": { "Location": "/patterns/project-organization.md" } },
+              { "handle": "filesystem" },
+              {
+                "src": "/",
+                "has": [{ "type": "query", "key": "embedded", "value": "(?<slug>[^&]+)" }],
+                "dest": "/example-apps-embed/$slug/index.html"
+              },
+              { "src": "/playground/(.*)", "dest": "/playground/index.html" },
+              { "src": "/(.*)", "dest": "/index.html" }
+            ]
+          }
+          EOF
+
+      - name: Deploy to Vercel
+        run: npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_WEBSITE_PROJECT_ID }}

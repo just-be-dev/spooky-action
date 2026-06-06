@@ -1,4 +1,5 @@
-// Data-driven gesture engine. Gesture definitions are plain JSON:
+// Data-driven gesture engine. Gesture definitions are plain JSON, validated
+// against the `GestureDef` schema:
 //
 //   - `metrics` are named values computed each frame from the entity's
 //     landmarks via a small expression language (optionally EMA-smoothed)
@@ -8,8 +9,26 @@
 // One state-machine instance exists per (gesture, tracked entity), so two
 // hands each run their own copy of a hand gesture. The engine is pure —
 // no DOM, no MediaPipe — so it runs in the browser and under `bun test`.
+//
+// Effect surface: `compile`, `compileGesture`, and `GestureEngine.make` fail
+// with tagged errors; `step` always succeeds and reports per-instance
+// runtime problems in `InstanceStatus.error`. The expression *evaluator*
+// stays exception-based internally — it runs per metric per entity per
+// frame, and exceptions are caught once at the instance boundary.
+
+import { Effect, Schema } from "effect";
 
 export type Point = { x: number; y: number };
+
+export class ExprError extends Schema.TaggedErrorClass<ExprError>()(
+  "ExprError",
+  { message: Schema.String }
+) {}
+
+export class GestureCompileError extends Schema.TaggedErrorClass<GestureCompileError>()(
+  "GestureCompileError",
+  { gesture: Schema.String, message: Schema.String }
+) {}
 
 // ---------------------------------------------------------------------------
 // Expression language
@@ -98,7 +117,8 @@ function tokenize(src: string): Tok[] {
   return toks;
 }
 
-export function compile(src: string): Expr {
+// Exception-based parser core; `compile` is the Effect boundary around it.
+function parseExpr(src: string): Expr {
   const toks = tokenize(src);
   let p = 0;
 
@@ -250,25 +270,57 @@ export function compile(src: string): Expr {
   return expr;
 }
 
+/**
+ * Compile an expression source string. The returned `Expr` is a plain
+ * function that may still throw at evaluation time (e.g. unknown names) —
+ * the engine catches those per instance and surfaces them as status errors.
+ */
+export const compile = (src: string): Effect.Effect<Expr, ExprError> =>
+  Effect.try({
+    try: () => parseExpr(src),
+    catch: (err) => new ExprError({ message: (err as Error).message }),
+  });
+
 // ---------------------------------------------------------------------------
 // Gesture definitions (the JSON schema)
 // ---------------------------------------------------------------------------
 
 // In emits, `type` is a literal; every other string value is an expression.
 // Use 'single quotes' inside an expression for a literal string payload.
-export type EmitSpec = Record<string, string | number | boolean>;
+export const EmitSpec = Schema.Record(
+  Schema.String,
+  Schema.Union([Schema.String, Schema.Number, Schema.Boolean])
+);
+export type EmitSpec = typeof EmitSpec.Type;
 
-export type TransitionDef = { if: string; goto: string; emit?: EmitSpec };
-export type StateDef = { emit?: EmitSpec; on?: TransitionDef[] };
+export const TransitionDef = Schema.Struct({
+  if: Schema.String,
+  goto: Schema.String,
+  emit: Schema.optional(EmitSpec),
+});
+export type TransitionDef = typeof TransitionDef.Type;
 
-export type GestureDef = {
-  name: string;
-  source: "hand" | "face";
-  metrics?: Record<string, string | { expr: string; smooth?: number }>;
-  initial?: string; // defaults to the first key of `states`
-  states: Record<string, StateDef>;
-  onLost?: { emit: EmitSpec }; // sent when the entity disappears
-};
+export const StateDef = Schema.Struct({
+  emit: Schema.optional(EmitSpec),
+  on: Schema.optional(Schema.Array(TransitionDef)),
+});
+export type StateDef = typeof StateDef.Type;
+
+export const MetricDef = Schema.Union([
+  Schema.String,
+  Schema.Struct({ expr: Schema.String, smooth: Schema.optional(Schema.Number) }),
+]);
+export type MetricDef = typeof MetricDef.Type;
+
+export const GestureDef = Schema.Struct({
+  name: Schema.String,
+  source: Schema.Literals(["hand", "face"]),
+  metrics: Schema.optional(Schema.Record(Schema.String, MetricDef)),
+  initial: Schema.optional(Schema.String), // defaults to the first key of `states`
+  states: Schema.Record(Schema.String, StateDef),
+  onLost: Schema.optional(Schema.Struct({ emit: EmitSpec })), // sent when the entity disappears
+});
+export type GestureDef = typeof GestureDef.Type;
 
 // What the tracker feeds the engine each frame
 export type Entity = {
@@ -290,6 +342,11 @@ export type InstanceStatus = {
   error?: string;
 };
 
+export type FrameResult = {
+  readonly statuses: InstanceStatus[];
+  readonly messages: WireMessage[];
+};
+
 // --- compilation ---
 
 type CompiledEmit = (ctx: Ctx, id: string) => WireMessage;
@@ -303,7 +360,7 @@ type CompiledMetric = {
 type CompiledTransition = { cond: Expr; goto: string; emit?: CompiledEmit };
 type CompiledState = { emit?: CompiledEmit; on: CompiledTransition[] };
 
-type CompiledGesture = {
+export type CompiledGesture = {
   def: GestureDef;
   metrics: CompiledMetric[];
   initial: string;
@@ -311,13 +368,13 @@ type CompiledGesture = {
   onLost?: CompiledEmit;
 };
 
-function compileEmit(spec: EmitSpec): CompiledEmit {
+function compileEmitSync(spec: EmitSpec): CompiledEmit {
   const type = spec.type;
   if (typeof type !== "string")
     throw new Error(`emit needs a literal string "type": ${JSON.stringify(spec)}`);
   const fields: [string, Expr | number | boolean][] = Object.entries(spec)
     .filter(([k]) => k !== "type")
-    .map(([k, v]) => [k, typeof v === "string" ? compile(v) : v]);
+    .map(([k, v]) => [k, typeof v === "string" ? parseExpr(v) : v]);
   return (ctx, id) => {
     const msg: WireMessage = { type, id };
     for (const [k, v] of fields) msg[k] = typeof v === "function" ? v(ctx) : v;
@@ -325,7 +382,7 @@ function compileEmit(spec: EmitSpec): CompiledEmit {
   };
 }
 
-export function compileGesture(def: GestureDef): CompiledGesture {
+function compileGestureSync(def: GestureDef): CompiledGesture {
   const wrap = <T>(what: string, fn: () => T): T => {
     try {
       return fn();
@@ -338,8 +395,8 @@ export function compileGesture(def: GestureDef): CompiledGesture {
     ([name, m]) =>
       wrap(`metric '${name}'`, () =>
         typeof m === "string"
-          ? { name, expr: compile(m) }
-          : { name, expr: compile(m.expr), smooth: m.smooth }
+          ? { name, expr: parseExpr(m) }
+          : { name, expr: parseExpr(m.expr), smooth: m.smooth }
       )
   );
 
@@ -352,14 +409,14 @@ export function compileGesture(def: GestureDef): CompiledGesture {
   const states: Record<string, CompiledState> = {};
   for (const [name, s] of Object.entries(def.states)) {
     states[name] = {
-      emit: s.emit && wrap(`state '${name}' emit`, () => compileEmit(s.emit!)),
+      emit: s.emit && wrap(`state '${name}' emit`, () => compileEmitSync(s.emit!)),
       on: (s.on ?? []).map((t) => {
         if (!def.states[t.goto])
           throw new Error(`[${def.name}] state '${name}' → unknown state '${t.goto}'`);
         return wrap(`state '${name}' transition`, () => ({
-          cond: compile(t.if),
+          cond: parseExpr(t.if),
           goto: t.goto,
-          emit: t.emit && compileEmit(t.emit),
+          emit: t.emit && compileEmitSync(t.emit),
         }));
       }),
     };
@@ -370,9 +427,21 @@ export function compileGesture(def: GestureDef): CompiledGesture {
     metrics,
     initial,
     states,
-    onLost: def.onLost && wrap("onLost emit", () => compileEmit(def.onLost!.emit)),
+    onLost: def.onLost && wrap("onLost emit", () => compileEmitSync(def.onLost!.emit)),
   };
 }
+
+export const compileGesture = (
+  def: GestureDef
+): Effect.Effect<CompiledGesture, GestureCompileError> =>
+  Effect.try({
+    try: () => compileGestureSync(def),
+    catch: (err) =>
+      new GestureCompileError({
+        gesture: def.name,
+        message: (err as Error).message,
+      }),
+  });
 
 // --- runtime ---
 
@@ -399,20 +468,31 @@ type Instance = {
 };
 
 export class GestureEngine {
-  private gestures: CompiledGesture[];
-  private instances = new Map<string, Instance>();
+  /** Compile a set of defs into a fresh engine. */
+  static readonly make = Effect.fn("GestureEngine.make")(function* (
+    defs: ReadonlyArray<GestureDef>
+  ) {
+    const gestures: CompiledGesture[] = [];
+    for (const def of defs) gestures.push(yield* compileGesture(def));
+    return new GestureEngine(gestures);
+  });
 
-  constructor(defs: GestureDef[]) {
-    this.gestures = defs.map(compileGesture);
+  private readonly instances = new Map<string, Instance>();
+
+  private constructor(private readonly gestures: CompiledGesture[]) {}
+
+  /** Run one frame. Wire messages are returned in emit order. */
+  step(entities: ReadonlyArray<Entity>): Effect.Effect<FrameResult> {
+    return Effect.sync(() => this.stepSync(entities));
   }
 
-  /** Run one frame. Calls `send` for every wire message emitted. */
-  step(entities: Entity[], send: (msg: WireMessage) => void): InstanceStatus[] {
+  private stepSync(entities: ReadonlyArray<Entity>): FrameResult {
     const globals = {
       hands: { count: entities.filter((e) => e.type === "hand").length },
       faces: { count: entities.filter((e) => e.type === "face").length },
     };
     const statuses: InstanceStatus[] = [];
+    const messages: WireMessage[] = [];
     const seen = new Set<string>();
 
     for (const g of this.gestures) {
@@ -464,7 +544,7 @@ export class GestureEngine {
           // At most one transition per frame, first match wins
           for (const t of g.states[inst.state]!.on) {
             if (t.cond(ctx)) {
-              if (t.emit) send(t.emit(ctx, key));
+              if (t.emit) messages.push(t.emit(ctx, key));
               inst.state = t.goto;
               break;
             }
@@ -472,7 +552,7 @@ export class GestureEngine {
 
           // Continuous emit of the (possibly new) current state
           const cur = g.states[inst.state]!;
-          if (cur.emit) send(cur.emit(ctx, key));
+          if (cur.emit) messages.push(cur.emit(ctx, key));
 
           inst.lastCtx = ctx;
           status.state = inst.state;
@@ -487,7 +567,7 @@ export class GestureEngine {
       if (seen.has(key)) continue;
       if (inst.gesture.onLost && inst.lastCtx) {
         try {
-          send(inst.gesture.onLost(inst.lastCtx, key));
+          messages.push(inst.gesture.onLost(inst.lastCtx, key));
         } catch {
           // last ctx may not satisfy the emit — drop it
         }
@@ -495,6 +575,6 @@ export class GestureEngine {
       this.instances.delete(key);
     }
 
-    return statuses;
+    return { statuses, messages };
   }
 }

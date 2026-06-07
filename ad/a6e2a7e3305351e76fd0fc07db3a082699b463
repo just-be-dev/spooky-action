@@ -1,0 +1,19 @@
+vite.config.ts
+  s_8a536cadf602ed::t_fa2f0ff37526c9 12-14,17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "ada6e2a7e3305351e76fd0fc07db3a082699b463",
+  "prompts": {},
+  "sessions": {
+    "s_8a536cadf602ed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4577155f-1d59-4e5d-ac50-22567d30c12d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

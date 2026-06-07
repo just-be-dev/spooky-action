@@ -9,11 +9,12 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // The gesture lab backend (src/main.ts) owns the defs API and
-      // the WebSocket bridge to the native overlay.
+      // The gesture lab backend (src/main.ts) owns the defs API; the
+      // control WebSocket channel (src/control/websocket.ts) has its own
+      // server bridging to the native overlay.
       "/api": "http://localhost:7900",
       "/ws": {
-        target: "ws://localhost:7900",
+        target: "ws://localhost:7901",
         ws: true,
       },
     },

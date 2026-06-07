@@ -1,0 +1,67 @@
+src/control/channels/websocket.ts
+  s_8a536cadf602ed::t_46d51b9651215f 11
+  s_c11536fda81bbb::t_09111b911c5029 1-10,13-76,81,83-107
+  s_c11536fda81bbb::t_92c770ec48c27b 79-80
+  s_c11536fda81bbb::t_e1b9cd9331d34a 77-78,82
+src/control/surface.ts
+  s_8a536cadf602ed::t_3da2f7fbf6c18d 5-8,11,18-21
+  s_8a536cadf602ed::t_d591757b9fce42 1-4,9-10,12-17,22-23
+src/control/capability.ts
+  s_8a536cadf602ed::t_b3be1fd09ca821 1-5,7-10,13-18,24-34,36,39-40,49-50
+  s_8a536cadf602ed::t_829d6d037f9a91 6,11-12
+  s_8a536cadf602ed::t_cbb3793970ee70 19-23,35,42-48
+  s_8a536cadf602ed::t_47fcb36dd23bcd 37-38,41
+vitest.config.ts
+  s_d48e184a69bdc4::t_8d280f9853419d 6
+  s_2098d091bb56d8::t_9b53283fc9d42d 7
+src/control/bridge.ts
+  s_8a536cadf602ed::t_286f81683ef91c 1,8-10,20-22,27,49-52,65-68
+  s_8a536cadf602ed::t_fae4f335e517c7 2-7,11-19,23-26,39-48,57-64
+  s_8a536cadf602ed::t_9641f04637f116 28-38
+  s_8a536cadf602ed::t_2e7bf89eca4574 53-56
+src/control/channel.ts
+  s_8a536cadf602ed::t_ecb8860def61f8 1-5,10-14,17-25,31-32
+  s_8a536cadf602ed::t_11cbe9f6cc853d 7-8,15-16
+  s_8a536cadf602ed::t_4d62ef597e4c84 26-30
+  s_8a536cadf602ed::t_076e784bbb244f 6,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "fea26ba082c9060298068795e8513f8ee597909e",
+  "prompts": {},
+  "sessions": {
+    "s_2098d091bb56d8": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15fb28592ffePSPawbrOv2sNTx",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    },
+    "s_8a536cadf602ed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4577155f-1d59-4e5d-ac50-22567d30c12d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    },
+    "s_c11536fda81bbb": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15fc8861cffe1JjooY1Buys9Sm",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    },
+    "s_d48e184a69bdc4": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15fa16acbffeFitdXFPv7rK190",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

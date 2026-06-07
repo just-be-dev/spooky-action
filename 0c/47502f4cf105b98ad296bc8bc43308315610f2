@@ -1,0 +1,21 @@
+src/main.ts
+  s_b0c78d17ef5f5f::t_6b5ca34a0d7e85 16
+src/gesture/engine.test.ts
+  s_b0c78d17ef5f5f::t_9ed22cb62297e3 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "0c47502f4cf105b98ad296bc8bc43308315610f2",
+  "prompts": {},
+  "sessions": {
+    "s_b0c78d17ef5f5f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "777c61e5-f477-4e2b-9cec-2258c2708ec1",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

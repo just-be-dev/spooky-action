@@ -1,0 +1,23 @@
+{
+  "name": "pinch",
+  "source": "hand",
+  "metrics": {
+    "pinch": "dist(world_thumb_tip, world_index_tip) / dist(world_wrist, world_middle_mcp)",
+    "pos": { "expr": "mid(thumb_tip, index_tip)", "smooth": 0.4 }
+  },
+  "initial": "off",
+  "states": {
+    "off": {
+      "on": [{ "if": "pinch < 0.9", "goto": "potential" }]
+    },
+    "potential": {
+      "on": [
+        { "if": "pinch < 0.35", "goto": "active" },
+        { "if": "pinch > 0.9", "goto": "off" }
+      ]
+    },
+    "active": {
+      "on": [{ "if": "pinch > 0.5", "goto": "potential" }]
+    }
+  }
+}

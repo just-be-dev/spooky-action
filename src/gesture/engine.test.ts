@@ -1,18 +1,11 @@
 import { test, expect, describe } from "vitest";
 import { Effect, Schema } from "effect";
-import {
-  compileGesture,
-  GestureDef,
-  GestureEngine,
-  type Entity,
-  type WireMessage,
-} from "./engine";
+import { compileGesture, GestureDef, GestureEngine, type Entity } from "./engine";
 import { HAND_LANDMARKS } from "../landmarks";
-import pinchClickJson from "../defs/pinch-click.json";
+import pinchJson from "../defs/pinch.json";
 
 // Run a failing Effect and return its typed error
-const failure = <A, E>(effect: Effect.Effect<A, E>): E =>
-  Effect.runSync(Effect.flip(effect));
+const failure = <A, E>(effect: Effect.Effect<A, E>): E => Effect.runSync(Effect.flip(effect));
 
 describe("gesture compilation", () => {
   test("rejects unknown goto targets", () => {
@@ -48,9 +41,9 @@ describe("gesture compilation", () => {
   });
 });
 
-// --- synthetic hand frames for the real pinch-click def ---
+// --- synthetic hand frames for the real pinch def ---
 
-const pinchClick = Schema.decodeUnknownSync(GestureDef)(pinchClickJson);
+const pinch = Schema.decodeUnknownSync(GestureDef)(pinchJson);
 
 // wrist→middle_mcp = 0.2, so pinch ratio = dist(thumb, index) / 0.2
 function handAt(ratio: number, id = 1): Entity {
@@ -74,72 +67,75 @@ const makeEngine = (defs: ReadonlyArray<GestureDef>): GestureEngine =>
   Effect.runSync(GestureEngine.make(defs));
 
 function run(engine: GestureEngine, entities: Entity[]) {
-  const { statuses, messages } = Effect.runSync(engine.step(entities));
-  return { sent: messages satisfies WireMessage[], statuses };
+  return Effect.runSync(engine.step(entities));
 }
 
-describe("pinch-click gesture (real def)", () => {
-  test("full lifecycle: track → click → re-arm → hide → lost", () => {
-    const engine = makeEngine([pinchClick]);
+describe("pinch gesture (real def)", () => {
+  test("full lifecycle: off → potential → active → potential → off", () => {
+    const engine = makeEngine([pinch]);
 
-    // Open hand: idle, nothing sent
+    // Open hand: off.
     let r = run(engine, [handAt(1.0)]);
-    expect(r.sent).toEqual([]);
-    expect(r.statuses[0]!.state).toBe("idle");
+    expect(r.statuses[0]!.state).toBe("off");
+    expect(r.statuses[0]!.previousState).toBe("off");
 
-    // Closing: enters track, emits circle
+    // Closing: enters potential.
     r = run(engine, [handAt(0.6)]);
-    expect(r.statuses[0]!.state).toBe("track");
-    expect(r.sent).toHaveLength(1);
-    expect(r.sent[0]!.type).toBe("circle");
-    expect(r.sent[0]!.id).toBe("pinch-click#1");
+    expect(r.statuses[0]!.state).toBe("potential");
+    expect(r.statuses[0]!.previousState).toBe("off");
 
-    // Pinched: click fires once, then holds in fired
+    // Pinched: active.
     r = run(engine, [handAt(0.2)]);
-    expect(r.sent.map((m) => m.type)).toEqual(["click", "circle"]);
-    expect(r.statuses[0]!.state).toBe("fired");
+    expect(r.statuses[0]!.state).toBe("active");
+    expect(r.statuses[0]!.previousState).toBe("potential");
 
-    // Still pinched: no second click
+    // Still pinched: remains active.
     r = run(engine, [handAt(0.2)]);
-    expect(r.sent.map((m) => m.type)).toEqual(["circle"]);
-    expect(r.statuses[0]!.state).toBe("fired");
+    expect(r.statuses[0]!.state).toBe("active");
+    expect(r.statuses[0]!.previousState).toBe("active");
 
-    // Released past re-arm threshold: back to track
+    // Released past active threshold: back to potential.
     r = run(engine, [handAt(0.6)]);
-    expect(r.statuses[0]!.state).toBe("track");
+    expect(r.statuses[0]!.state).toBe("potential");
+    expect(r.statuses[0]!.previousState).toBe("active");
 
-    // Fully open: hide, back to idle
+    // Fully open: off.
     r = run(engine, [handAt(1.0)]);
-    expect(r.sent.map((m) => m.type)).toEqual(["hide"]);
-    expect(r.statuses[0]!.state).toBe("idle");
+    expect(r.statuses[0]!.state).toBe("off");
+    expect(r.statuses[0]!.previousState).toBe("potential");
 
-    // Hand disappears from track state → onLost hide
+    // Hand disappears from potential state: off for one frame.
     run(engine, [handAt(0.6)]);
     r = run(engine, []);
-    expect(r.sent.map((m) => m.type)).toEqual(["hide"]);
-    expect(r.sent[0]!.id).toBe("pinch-click#1");
+    expect(r.statuses).toEqual([
+      expect.objectContaining({
+        key: "pinch#1",
+        gesture: "pinch",
+        state: "off",
+        previousState: "potential",
+      }),
+    ]);
   });
 
-  test("two hands: rings for both, clicks suppressed", () => {
-    const engine = makeEngine([pinchClick]);
+  test("two hands run independent state machines", () => {
+    const engine = makeEngine([pinch]);
     run(engine, [handAt(0.6, 1), handAt(0.6, 2)]);
     const r = run(engine, [handAt(0.2, 1), handAt(0.2, 2)]);
-    expect(r.sent.map((m) => m.type)).toEqual(["circle", "circle"]);
-    expect(new Set(r.sent.map((m) => m.id))).toEqual(
-      new Set(["pinch-click#1", "pinch-click#2"])
+    expect(r.statuses.map((status) => status.state)).toEqual(["active", "active"]);
+    expect(new Set(r.statuses.map((status) => status.key))).toEqual(
+      new Set(["pinch#1", "pinch#2"]),
     );
   });
 
   test("world landmarks keep open pinch stable under screen foreshortening", () => {
-    const engine = makeEngine([pinchClick]);
+    const engine = makeEngine([pinch]);
     const r = run(engine, [foreshortenedHand()]);
-    expect(r.sent).toEqual([]);
-    expect(r.statuses[0]!.state).toBe("idle");
+    expect(r.statuses[0]!.state).toBe("off");
     expect(r.statuses[0]!.metrics.pinch).toBeCloseTo(1);
   });
 
   test("metric smoothing: pos trails the raw midpoint", () => {
-    const engine = makeEngine([pinchClick]);
+    const engine = makeEngine([pinch]);
     const a = handAt(0.6);
     run(engine, [a]);
     // Move the whole pinch pair; smoothed pos should lag behind
@@ -147,9 +143,9 @@ describe("pinch-click gesture (real def)", () => {
     for (const i of [HAND_LANDMARKS.thumb_tip!, HAND_LANDMARKS.index_tip!])
       b.landmarks[i] = { x: b.landmarks[i]!.x + 0.2, y: b.landmarks[i]!.y };
     const r = run(engine, [b]);
-    const circle = r.sent.find((m) => m.type === "circle")!;
-    expect(circle.x as number).toBeGreaterThan(0.5);
-    expect(circle.x as number).toBeLessThan(0.7); // not the full jump
+    const pos = r.statuses[0]!.metrics.pos as { x: number };
+    expect(pos.x).toBeGreaterThan(0.5);
+    expect(pos.x).toBeLessThan(0.7); // not the full jump
   });
 
   test("runtime errors surface as status, not failures", () => {
@@ -166,7 +162,7 @@ describe("pinch-click gesture (real def)", () => {
 
   test("malformed defs are rejected by the schema", () => {
     expect(() =>
-      Schema.decodeUnknownSync(GestureDef)({ name: "x", source: "tentacle", states: {} })
+      Schema.decodeUnknownSync(GestureDef)({ name: "x", source: "tentacle", states: {} }),
     ).toThrow();
   });
 });

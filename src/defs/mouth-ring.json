@@ -11,14 +11,7 @@
       "on": [{ "if": "open > 0.08", "goto": "showing" }]
     },
     "showing": {
-      "emit": {
-        "type": "circle",
-        "x": "pos.x",
-        "y": "pos.y",
-        "r": "lerp(open, 0.05, 0.2, 12, 60)"
-      },
-      "on": [{ "if": "open < 0.05", "goto": "idle", "emit": { "type": "hide" } }]
+      "on": [{ "if": "open < 0.05", "goto": "idle" }]
     }
-  },
-  "onLost": { "emit": { "type": "hide" } }
+  }
 }

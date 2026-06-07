@@ -12,7 +12,7 @@ camera → src/ui (Foldkit) → engine.ts (defs/*.json) → WS → main.ts → c
 
 ## Layout
 
-- `src/engine.ts` — pure gesture engine (JSON defs + expression language).
+- `src/gesture/` — pure gesture engine: state machines (`engine.ts`) + expression language (`expr.ts`).
 - `src/defs/` — gesture definitions.
 - `src/main.ts` — Bun backend: defs API + WebSocket bridge to the overlay.
 - `src/ui/` — browser UI, a Foldkit app served by Vite.

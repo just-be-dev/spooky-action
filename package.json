@@ -11,7 +11,7 @@
     "format": "oxfmt",
     "lint": "oxlint",
     "test": "vitest run",
-    "test:engine": "bun test src/engine.test.ts",
+    "test:engine": "bun test src/gesture",
     "prepare": "effect-tsgo patch"
   },
   "dependencies": {

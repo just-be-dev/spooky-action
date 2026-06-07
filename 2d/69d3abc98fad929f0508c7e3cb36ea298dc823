@@ -1,0 +1,19 @@
+src/ui/main.ts
+  s_2098d091bb56d8::t_582e4c9aac7a4f 491-492,528,552,556
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "2d69d3abc98fad929f0508c7e3cb36ea298dc823",
+  "prompts": {},
+  "sessions": {
+    "s_2098d091bb56d8": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15fb28592ffePSPawbrOv2sNTx",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

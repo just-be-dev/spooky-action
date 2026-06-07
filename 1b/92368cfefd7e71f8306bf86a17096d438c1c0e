@@ -1,0 +1,25 @@
+src/gesture/engine.test.ts
+  s_f10cbc8c23f056::t_fd5a13911b768c 60-62,130,132
+src/gesture/defs/pinch.json
+  s_f10cbc8c23f056::t_d213347475e961 5
+  s_f10cbc8c23f056::t_5f01c86c429cf3 20
+src/ui/main.ts
+  s_f10cbc8c23f056::t_5f01c86c429cf3 686-693
+  s_f10cbc8c23f056::t_f02da4a13b9076 433,650
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "1b92368cfefd7e71f8306bf86a17096d438c1c0e",
+  "prompts": {},
+  "sessions": {
+    "s_f10cbc8c23f056": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15c6bd4dbffeBXpO0zU9Bw57Ve",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

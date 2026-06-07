@@ -13,7 +13,7 @@ import { runControlBridge } from "./control/bridge";
 import { webSocketChannelLayer } from "./control/channels/websocket";
 import { overlaySurfaceLayer } from "./control/surfaces/mac/overlay";
 
-const DEFS = `${import.meta.dir}/defs`;
+const DEFS = `${import.meta.dir}/gesture/defs`;
 
 export class DefsLoadError extends Schema.TaggedErrorClass<DefsLoadError>()(
   "DefsLoadError",

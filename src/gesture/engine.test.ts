@@ -2,7 +2,7 @@ import { test, expect, describe } from "vitest";
 import { Effect, Schema } from "effect";
 import { compileGesture, GestureDef, GestureEngine, type Entity } from "./engine";
 import { HAND_LANDMARKS } from "../landmarks";
-import pinchJson from "../defs/pinch.json";
+import pinchJson from "./defs/pinch.json";
 
 // Run a failing Effect and return its typed error
 const failure = <A, E>(effect: Effect.Effect<A, E>): E => Effect.runSync(Effect.flip(effect));

@@ -42,7 +42,7 @@ page to hot-reload (no restart needed).
   "source": "hand",                  // "hand" | "face"
   "metrics": {
     // computed every frame, in order; later metrics can reference earlier ones
-    "pinch": "dist(thumb_tip, index_tip) / dist(wrist, middle_mcp)",
+    "pinch": "dist(world_thumb_tip, world_index_tip) / dist(world_wrist, world_middle_mcp)",
     // wrap in { expr, smooth } for EMA smoothing (0..1, higher = snappier)
     "pos": { "expr": "mid(thumb_tip, index_tip)", "smooth": 0.4 }
   },
@@ -77,8 +77,12 @@ Plain strings, parsed by a tiny evaluator (no `eval`). Available:
 - **Literals**: numbers (`0.35`), `'single-quoted strings'`
 - **Landmarks**: named points for the entity (see `src/landmarks.ts`), e.g.
   `thumb_tip`, `wrist`, `nose_tip`, `chin` — or any index via `lm(152)`.
-  Points have `.x` and `.y`. Coordinates are normalized 0..1, **already
-  mirrored** to match the on-screen view.
+  Points have `.x`, `.y`, and `.z`. Coordinates are normalized 0..1,
+  **already mirrored** to match the on-screen view.
+- **Hand world landmarks**: hand gestures can use raw MediaPipe world points
+  with a `world_` prefix, e.g. `world_thumb_tip`, or by index via
+  `world_lm(8)`. These are useful for distance metrics that should resist
+  camera-perspective foreshortening.
 - **Metrics**: reference earlier metrics by name
 - **Globals**: `hands.count`, `faces.count`
 - **Functions**: `dist(a, b)`, `mid(a, b)`, `angle(a, b)` (degrees),

@@ -110,8 +110,9 @@ For more information, read the Bun API docs in `node_modules/bun-types/docs/**.m
 The browser UI is a Foldkit app (Elm architecture on Effect): `src/ui/main.ts`
 holds the pure definitions (Model, Message, init, update, view, Subscriptions,
 Managed Resources); `src/ui/entry.ts` boots the runtime. It is served by Vite
-(`bun run dev`), which proxies `/api` and `/ws` to the Bun backend
-(`bun run server`, port 7900). This is the one place Vite is used instead of
+(`bun run dev`), which proxies `/api` to the Bun backend (`bun run server`,
+port 7900) and `/ws` to the control WebSocket channel (port 7901, owned by
+`src/control/channels/websocket.ts`). This is the one place Vite is used instead of
 `Bun.serve` HTML bundling — Foldkit's tooling (`@foldkit/vite-plugin`,
 devtools MCP, Tailwind) is Vite-based.
 

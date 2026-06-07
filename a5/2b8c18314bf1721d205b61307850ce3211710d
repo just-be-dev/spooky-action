@@ -1,0 +1,37 @@
+src/control/channel.ts
+  s_8335a4111c62a8::t_bd69e576c12b57 1-4,12-13,16,18-20,29-30,32
+  ai_agent 15
+src/control/surface.ts
+  s_8335a4111c62a8::t_bd69e576c12b57 1-3,8-22,24,26
+src/control/bridge.ts
+  s_8335a4111c62a8::t_fb6ec7589e45fe 35
+  s_8335a4111c62a8::t_bd69e576c12b57 1-6,9,16-17,20-27,30,32-34,36,38,40-41,43-47,51-52,56-59,63,65-68,70,76,90-96
+  s_8335a4111c62a8::t_32e925ed8ccdde 77-84
+  s_8335a4111c62a8::t_4df75d2c945204 13,37,53-55,61,85,89,97,99-100
+src/control/channels/websocket.ts
+  s_8335a4111c62a8::t_4df75d2c945204 5,10,40,62-63,71-74,77,79,88,100,103
+  s_8335a4111c62a8::t_c9d8e2b8d9d33f 7,17,20,22-29,33,38,56,59-60,69,92,96-99
+src/main.ts
+  s_8335a4111c62a8::t_c9d8e2b8d9d33f 3-4,14-15,82-86,88-89
+  s_8335a4111c62a8::t_4df75d2c945204 19-22,37,58-62,69,71,75,77,87,91-92
+src/control/surfaces/mac/overlay.ts
+  s_8335a4111c62a8::t_bcca82ee661708 9
+  s_8335a4111c62a8::t_c9d8e2b8d9d33f 1,11
+  s_8335a4111c62a8::t_4df75d2c945204 19,26,32,55-58,71-72,85,88,93,97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "a52b8c18314bf1721d205b61307850ce3211710d",
+  "prompts": {},
+  "sessions": {
+    "s_8335a4111c62a8": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15d5a07eeffe4oOc2RgNFmbwrG",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

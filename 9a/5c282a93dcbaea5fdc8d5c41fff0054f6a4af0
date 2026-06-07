@@ -1,0 +1,19 @@
+.gitignore
+  s_8a536cadf602ed::t_3ace034f655ed5 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "9a5c282a93dcbaea5fdc8d5c41fff0054f6a4af0",
+  "prompts": {},
+  "sessions": {
+    "s_8a536cadf602ed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4577155f-1d59-4e5d-ac50-22567d30c12d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

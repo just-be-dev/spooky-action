@@ -1,0 +1,32 @@
+tsconfig.json
+  s_bf539b69eb239d::t_ad503b701f718c 36
+README.md
+  s_bf539b69eb239d::t_8f17ea7d14cf1d 3-11,15-18,20,24,26-112,115-116
+src/ui/main.ts
+  s_bf539b69eb239d::t_3337e2ff352fcb 2,6,32-33
+package.json
+  s_bf539b69eb239d::t_3337e2ff352fcb 7
+  s_bf539b69eb239d::t_5b50602a7f3702 14
+src/ui/main.story.test.ts
+  s_bf539b69eb239d::t_3337e2ff352fcb 30
+vite.config.ts
+  s_bf539b69eb239d::t_3337e2ff352fcb 12
+src/main.ts
+  s_bf539b69eb239d::t_3337e2ff352fcb 1-141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "46dbba2c51a6c090c673fb7d54624ea9419078da",
+  "prompts": {},
+  "sessions": {
+    "s_bf539b69eb239d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "199e72c8-20be-4a91-85bd-30681bfda50c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

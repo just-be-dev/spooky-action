@@ -112,8 +112,9 @@ engine changes.
 The engine is pure (no DOM/MediaPipe), so defs are testable:
 
 ```sh
-bun run test:engine   # engine tests (bun test)
-bun run test          # UI story tests (vitest)
+bun run test:engine   # engine tests (vitest)
+bun run test:ui       # UI story tests (vitest)
+bun run test          # all tests (vitest)
 ```
 
 `engine.test.ts` runs the real `pinch-click.json` through synthetic frames

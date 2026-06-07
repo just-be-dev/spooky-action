@@ -1,4 +1,4 @@
-import { test, expect, describe } from "bun:test";
+import { test, expect, describe } from "vitest";
 import { Effect } from "effect";
 import { compile, type Ctx, type Expr } from "./expr";
 

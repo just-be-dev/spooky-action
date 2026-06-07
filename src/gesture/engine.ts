@@ -9,7 +9,7 @@
 //
 // One state-machine instance exists per (gesture, tracked entity), so two
 // hands each run their own copy of a hand gesture. The engine is pure —
-// no DOM, no MediaPipe — so it runs in the browser and under `bun test`.
+// no DOM, no MediaPipe — so it runs in the browser and under Vitest.
 //
 // Effect surface: `compileGesture` and `GestureEngine.make` fail with tagged
 // errors; `step` always succeeds and reports per-instance runtime problems

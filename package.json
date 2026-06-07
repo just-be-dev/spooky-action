@@ -11,9 +11,9 @@
     "format": "oxfmt --write src",
     "format:check": "oxfmt --check src",
     "lint": "oxlint src --tsconfig tsconfig.json",
-    "test": "bun run test:engine && bun run test:ui",
-    "test:engine": "bun test src/gesture",
-    "test:ui": "vitest run"
+    "test": "vitest run",
+    "test:engine": "vitest run src/gesture",
+    "test:ui": "vitest run src/ui"
   },
   "dependencies": {
     "@effect/platform-browser": "4.0.0-beta.66",

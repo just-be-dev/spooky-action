@@ -1,6 +1,6 @@
 // Gesture lab backend: serves gesture definitions (defs/*.json) and bridges
 // wire messages from the browser to the native macOS overlay
-// (../control/overlay.ts → overlay.swift), which draws rings and posts real
+// (./control/overlay.ts → overlay.swift), which draws rings and posts real
 // clicks. The UI is the Foldkit app in src/ui, served by Vite, which proxies
 // /api and /ws here.
 //
@@ -9,7 +9,7 @@
 import { Glob } from "bun";
 import { Effect, Schema } from "effect";
 import { BunRuntime } from "@effect/platform-bun";
-import { Overlay } from "../control/overlay";
+import { Overlay } from "./control/overlay";
 
 const DEFS = `${import.meta.dir}/defs`;
 

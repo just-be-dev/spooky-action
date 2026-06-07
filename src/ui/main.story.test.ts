@@ -27,7 +27,7 @@ import {
   init,
   update,
 } from "./main";
-import type { GestureDef } from "../gestures/engine";
+import type { GestureDef } from "../engine";
 import { initialTrackState } from "./tracking";
 
 const pinchClickDef: GestureDef = {

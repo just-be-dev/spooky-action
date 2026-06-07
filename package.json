@@ -4,14 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "server": "bun src/gestures/main.ts",
+    "server": "bun src/main.ts",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsgo --noEmit",
     "format": "oxfmt",
     "lint": "oxlint",
     "test": "vitest run",
-    "test:engine": "bun test src/gestures",
+    "test:engine": "bun test src/engine.test.ts",
     "prepare": "effect-tsgo patch"
   },
   "dependencies": {

@@ -33,6 +33,5 @@
     ]
   },
   "include": ["src/**/*", "*.ts"],
-  // src/demo is the legacy pre-gestures demo; it predates noUncheckedIndexedAccess
-  "exclude": ["repos", "node_modules", "src/demo"]
+  "exclude": ["repos", "node_modules"]
 }

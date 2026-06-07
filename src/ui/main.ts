@@ -1,9 +1,9 @@
 // Gesture Lab UI: camera + MediaPipe tracking feeding the data-driven
-// gesture engine (src/gestures/engine.ts), rebuilt as a Foldkit program.
+// gesture engine (src/engine.ts), rebuilt as a Foldkit program.
 // Detection runs in the ProcessFrame Command; the camera, MediaPipe models,
 // gesture engine, and overlay WebSocket are Managed Resources whose
 // lifecycles follow the Model. Emitted wire messages go over /ws to the
-// backend (src/gestures/main.ts), which drives the native overlay.
+// backend (src/main.ts), which drives the native overlay.
 import {
   FaceLandmarker,
   FilesetResolver,
@@ -29,8 +29,8 @@ import {
   GestureEngine,
   type Entity,
   type WireMessage,
-} from "../gestures/engine";
-import { FACE_LANDMARKS, HAND_LANDMARKS } from "../gestures/landmarks";
+} from "../engine";
+import { FACE_LANDMARKS, HAND_LANDMARKS } from "../landmarks";
 import {
   LandmarkPoint,
   TrackState,

@@ -9,7 +9,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // The gesture lab backend (src/gestures/main.ts) owns the defs API and
+      // The gesture lab backend (src/main.ts) owns the defs API and
       // the WebSocket bridge to the native overlay.
       "/api": "http://localhost:7900",
       "/ws": {

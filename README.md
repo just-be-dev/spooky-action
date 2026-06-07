@@ -1,24 +1,116 @@
 # collabspace
 
-Gesture-driven distance collaboration experiments. Detection runs in the
-browser (MediaPipe), a Bun server bridges events to a native macOS overlay.
+Gesture-driven distance collaboration. Detection runs in the browser
+(MediaPipe hands + faces, multiple people, persistent entity IDs), gestures
+are **declarative JSON** evaluated by a small engine, and emitted events go
+over WebSocket to a Bun server that drives a native macOS overlay (rings +
+real clicks).
+
+```
+camera → src/ui (Foldkit) → engine.ts (defs/*.json) → WS → main.ts → control/overlay.swift → macOS
+```
 
 ## Layout
 
-- `src/gestures/` — the gesture lab: data-driven gestures (JSON defs +
-  expression engine). The canonical app.
-- `src/pointer/` — earlier pinch-to-click pointer prototype.
-- `src/demo/` — original in-browser pinch detector demo (no overlay).
+- `src/engine.ts` — pure gesture engine (JSON defs + expression language).
+- `src/defs/` — gesture definitions.
+- `src/main.ts` — Bun backend: defs API + WebSocket bridge to the overlay.
+- `src/ui/` — browser UI, a Foldkit app served by Vite.
 - `src/control/` — native macOS side: the Swift overlay (rings + synthetic
-  clicks) shared by gestures and pointer, compiled automatically on first run.
+  clicks), compiled automatically on first run.
 
 ## Run
 
-```bash
+```sh
 bun install
-bun --hot src/gestures/main.ts   # gesture lab → http://localhost:7900
-bun src/pointer/main.ts          # pinch pointer → http://localhost:7900
-bun src/demo/index.ts            # browser-only demo → http://localhost:7777
+bun run server   # backend on :7900 (defs API + overlay WS bridge)
+bun run dev      # Vite dev server; open the printed URL (proxies /api and /ws to :7900)
 ```
 
-This project was created using `bun init` in bun v1.3.1. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+Clicking requires Accessibility permission for your terminal app (System
+Settings → Privacy & Security → Accessibility).
+
+## Gesture definitions (`src/defs/*.json`)
+
+A gesture binds to every tracked entity of its `source` type — each hand or
+face runs its own state-machine instance. Edit a def and press **r** in the
+page to hot-reload (no restart needed).
+
+```jsonc
+{
+  "name": "pinch-click",
+  "source": "hand",                  // "hand" | "face"
+  "metrics": {
+    // computed every frame, in order; later metrics can reference earlier ones
+    "pinch": "dist(thumb_tip, index_tip) / dist(wrist, middle_mcp)",
+    // wrap in { expr, smooth } for EMA smoothing (0..1, higher = snappier)
+    "pos": { "expr": "mid(thumb_tip, index_tip)", "smooth": 0.4 }
+  },
+  "initial": "idle",                 // defaults to the first state
+  "states": {
+    "idle":  { "on": [{ "if": "pinch < 0.9", "goto": "track" }] },
+    "track": {
+      // continuous emit: sent every frame while in this state
+      "emit": { "type": "circle", "x": "pos.x", "y": "pos.y",
+                "r": "lerp(pinch, 0.35, 0.9, 8, 64)" },
+      "on": [
+        // transitions checked in order, at most one fires per frame
+        { "if": "pinch < 0.35 && hands.count == 1", "goto": "fired",
+          "emit": { "type": "click", "x": "pos.x", "y": "pos.y" } },
+        { "if": "pinch > 0.9", "goto": "idle", "emit": { "type": "hide" } }
+      ]
+    },
+    "fired": { "on": [{ "if": "pinch > 0.5", "goto": "track" }] }
+  },
+  "onLost": { "emit": { "type": "hide" } }  // entity left the frame
+}
+```
+
+Hysteresis (e.g. click at < 0.35, re-arm at > 0.5) falls out of the state
+machine naturally — no special support needed.
+
+## Expression language
+
+Plain strings, parsed by a tiny evaluator (no `eval`). Available:
+
+- **Operators**: `+ - * / %`, `< > <= >= == !=`, `&& || !`, parentheses
+- **Literals**: numbers (`0.35`), `'single-quoted strings'`
+- **Landmarks**: named points for the entity (see `src/landmarks.ts`), e.g.
+  `thumb_tip`, `wrist`, `nose_tip`, `chin` — or any index via `lm(152)`.
+  Points have `.x` and `.y`. Coordinates are normalized 0..1, **already
+  mirrored** to match the on-screen view.
+- **Metrics**: reference earlier metrics by name
+- **Globals**: `hands.count`, `faces.count`
+- **Functions**: `dist(a, b)`, `mid(a, b)`, `angle(a, b)` (degrees),
+  `lerp(v, inMin, inMax, outMin, outMax)` (clamped), `clamp(v, lo, hi)`,
+  `abs min max floor round`, `point(x, y)`
+
+## Emits → wire protocol → overlay
+
+Emit objects are sent verbatim over the WebSocket, with `type` literal and
+every other string field evaluated as an expression. The engine adds an
+`id` (`gesture#entityId`) so multiple instances don't fight over overlay
+state. The server maps types to overlay commands:
+
+| wire message                | overlay command          | effect                       |
+| --------------------------- | ------------------------ | ---------------------------- |
+| `{type:"circle", x, y, r}`  | `circle <id> <x> <y> <r>`| show/update ring `id`        |
+| `{type:"hide"}`             | `hide <id>`              | remove ring `id`             |
+| `{type:"hideall"}`          | `hideall`                | remove all rings             |
+| `{type:"click", x, y}`      | `click <x> <y>`          | real left click + flash      |
+
+New OS-side capabilities = add a wire type in `src/main.ts` + a stdin command
+in `src/control/overlay.swift`; gestures can then emit it from data with no
+engine changes.
+
+## Testing
+
+The engine is pure (no DOM/MediaPipe), so defs are testable:
+
+```sh
+bun run test:engine   # engine tests (bun test)
+bun run test          # UI story tests (vitest)
+```
+
+`engine.test.ts` runs the real `pinch-click.json` through synthetic frames
+(track → click → re-arm → hide → lost).

@@ -1,0 +1,38 @@
+src/main.ts
+  s_8a536cadf602ed::t_d72b73623265e0 13-14
+  s_8a536cadf602ed::t_b4b80c0d388928 1-5,7-8,10,12,67,81-82,85,89-90,92
+  s_bf539b69eb239d::t_3337e2ff352fcb 91
+  s_c11536fda81bbb::t_edbe96368ea67a 11,86-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "6fdffeaea747161e4cfe1cf9af67e00b49db0630",
+  "prompts": {},
+  "sessions": {
+    "s_8a536cadf602ed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4577155f-1d59-4e5d-ac50-22567d30c12d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    },
+    "s_bf539b69eb239d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "199e72c8-20be-4a91-85bd-30681bfda50c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    },
+    "s_c11536fda81bbb": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15fc8861cffe1JjooY1Buys9Sm",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

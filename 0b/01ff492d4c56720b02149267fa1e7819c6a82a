@@ -1,0 +1,28 @@
+src/ui/main.story.test.ts
+  s_4ab32b8129d115::t_184345a8923cb7 30
+src/gesture/engine.test.ts
+  s_4ab32b8129d115::t_184345a8923cb7 10-11
+README.md
+  s_4ab32b8129d115::t_a3ed1c9503dba8 15
+package.json
+  s_4ab32b8129d115::t_a3ed1c9503dba8 14
+src/ui/main.ts
+  s_4ab32b8129d115::t_184345a8923cb7 32
+  s_4ab32b8129d115::t_a3ed1c9503dba8 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "0b01ff492d4c56720b02149267fa1e7819c6a82a",
+  "prompts": {},
+  "sessions": {
+    "s_4ab32b8129d115": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "406152d0-430f-4991-bc0c-de7945549ffa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

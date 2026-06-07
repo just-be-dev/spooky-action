@@ -45,6 +45,7 @@ describe("expression language", () => {
   test("builtin functions", () => {
     const ctx: Ctx = (n) => (n === "a" ? { x: 0, y: 0 } : n === "b" ? { x: 3, y: 4 } : undefined);
     expect(compiled("dist(a, b)")(ctx)).toBe(5);
+    expect(compiled("dist2d(a, b)")(ctx)).toBe(5);
     expect(compiled("mid(a, b)")(ctx)).toEqual({ x: 1.5, y: 2, z: 0 });
     expect(compiled("lerp(0.5, 0, 1, 10, 20)")(emptyCtx)).toBe(15);
     expect(compiled("lerp(5, 0, 1, 10, 20)")(emptyCtx)).toBe(20); // clamped
@@ -56,6 +57,7 @@ describe("expression language", () => {
     const ctx: Ctx = (n) =>
       n === "a" ? { x: 0, y: 0, z: 0 } : n === "b" ? { x: 2, y: 4, z: 4 } : undefined;
     expect(compiled("dist(a, b)")(ctx)).toBe(6);
+    expect(compiled("dist2d(a, b)")(ctx)).toBeCloseTo(Math.hypot(2, 4));
     expect(compiled("mid(a, b)")(ctx)).toEqual({ x: 1, y: 2, z: 2 });
     expect(compiled("point(1, 2, 3).z")(emptyCtx)).toBe(3);
   });

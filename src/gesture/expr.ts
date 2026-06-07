@@ -26,6 +26,7 @@ export type Expr = (ctx: Ctx) => unknown;
 
 const FUNCS: Record<string, (...args: any[]) => unknown> = {
   dist: (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y, zOf(a) - zOf(b)),
+  dist2d: (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y),
   mid: (a: Point, b: Point) => ({
     x: (a.x + b.x) / 2,
     y: (a.y + b.y) / 2,

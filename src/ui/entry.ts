@@ -1,14 +1,6 @@
 import { Runtime } from "foldkit";
 
-import {
-  Message,
-  Model,
-  init,
-  managedResources,
-  subscriptions,
-  update,
-  view,
-} from "./main";
+import { Message, Model, init, managedResources, subscriptions, update, view } from "./main";
 
 const program = Runtime.makeProgram({
   Model,

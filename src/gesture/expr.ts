@@ -17,25 +17,22 @@ export type Point = { x: number; y: number; z?: number };
 
 const zOf = (point: Point): number => point.z ?? 0;
 
-export class ExprError extends Schema.TaggedErrorClass<ExprError>()(
-  "ExprError",
-  { message: Schema.String }
-) {}
+export class ExprError extends Schema.TaggedErrorClass<ExprError>()("ExprError", {
+  message: Schema.String,
+}) {}
 
 export type Ctx = (name: string) => unknown;
 export type Expr = (ctx: Ctx) => unknown;
 
 const FUNCS: Record<string, (...args: any[]) => unknown> = {
-  dist: (a: Point, b: Point) =>
-    Math.hypot(a.x - b.x, a.y - b.y, zOf(a) - zOf(b)),
+  dist: (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y, zOf(a) - zOf(b)),
   mid: (a: Point, b: Point) => ({
     x: (a.x + b.x) / 2,
     y: (a.y + b.y) / 2,
     z: (zOf(a) + zOf(b)) / 2,
   }),
   // Angle of the segment a→b in degrees (0 = rightward, 90 = downward)
-  angle: (a: Point, b: Point) =>
-    (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI,
+  angle: (a: Point, b: Point) => (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI,
   // Map v from [inMin, inMax] to [outMin, outMax], clamped
   lerp: (v: number, inMin: number, inMax: number, outMin: number, outMax: number) => {
     const t = Math.min(Math.max((v - inMin) / (inMax - inMin), 0), 1);
@@ -117,8 +114,7 @@ export function parseExpr(src: string): Expr {
   };
   const eat = (v: string) => {
     const t = toks[p++];
-    if (t?.k !== "op" || t.v !== v)
-      throw new Error(`Expected '${v}' in: ${src}`);
+    if (t?.k !== "op" || t.v !== v) throw new Error(`Expected '${v}' in: ${src}`);
   };
 
   function primary(): Expr {
@@ -143,15 +139,13 @@ export function parseExpr(src: string): Expr {
         eat(")");
         return (ctx) => {
           const fn = FUNCS[name] ?? ctx(name);
-          if (typeof fn !== "function")
-            throw new Error(`'${name}' is not a function (in: ${src})`);
+          if (typeof fn !== "function") throw new Error(`'${name}' is not a function (in: ${src})`);
           return fn(...args.map((a) => a(ctx)));
         };
       }
       return (ctx) => {
         const v = ctx(name);
-        if (v === undefined)
-          throw new Error(`Unknown name '${name}' (in: ${src})`);
+        if (v === undefined) throw new Error(`Unknown name '${name}' (in: ${src})`);
         return v;
       };
     }
@@ -174,8 +168,7 @@ export function parseExpr(src: string): Expr {
       e = (ctx) => {
         const obj = inner(ctx) as Record<string, unknown> | null;
         const v = obj?.[prop];
-        if (v === undefined)
-          throw new Error(`No property '${prop}' (in: ${src})`);
+        if (v === undefined) throw new Error(`No property '${prop}' (in: ${src})`);
         return v;
       };
     }
@@ -196,10 +189,7 @@ export function parseExpr(src: string): Expr {
     return postfix();
   }
 
-  const binary = (
-    next: () => Expr,
-    ops: Record<string, (a: any, b: any) => unknown>
-  ) => {
+  const binary = (next: () => Expr, ops: Record<string, (a: any, b: any) => unknown>) => {
     return (): Expr => {
       let e = next();
       let op: string | null;

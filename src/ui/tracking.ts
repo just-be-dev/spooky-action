@@ -23,8 +23,7 @@ export const initialTrackState: TrackState = { tracked: [], nextId: 1 };
 
 const MATCH_DISTANCE = 0.25;
 
-const distance = (a: LandmarkPoint, b: LandmarkPoint): number =>
-  Math.hypot(a.x - b.x, a.y - b.y);
+const distance = (a: LandmarkPoint, b: LandmarkPoint): number => Math.hypot(a.x - b.x, a.y - b.y);
 
 type MatchAccumulator = Readonly<{
   tracked: ReadonlyArray<TrackedAnchor>;
@@ -60,10 +59,7 @@ export const matchTracked = (
         Array.head,
         Option.match({
           onNone: () => ({
-            tracked: [
-              ...accumulator.tracked,
-              { id: accumulator.nextId, anchor },
-            ],
+            tracked: [...accumulator.tracked, { id: accumulator.nextId, anchor }],
             remaining: accumulator.remaining,
             nextId: accumulator.nextId + 1,
           }),
@@ -93,9 +89,7 @@ export const matchTracked = (
  * screen). Landmarks are mirrored exactly once, at ingestion; handedness
  * labels are never swapped.
  */
-export const mirror = (
-  landmarks: ReadonlyArray<LandmarkPoint>,
-): Array<LandmarkPoint> =>
+export const mirror = (landmarks: ReadonlyArray<LandmarkPoint>): Array<LandmarkPoint> =>
   landmarks.map((point) => ({ x: 1 - point.x, y: point.y, z: point.z }));
 
 /** Landmark lookup by named index that tolerates missing entries. */

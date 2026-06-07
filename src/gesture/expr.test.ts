@@ -8,8 +8,7 @@ const emptyCtx: Ctx = () => undefined;
 const compiled = (src: string): Expr => Effect.runSync(compile(src));
 
 // Run a failing Effect and return its typed error
-const failure = <A, E>(effect: Effect.Effect<A, E>): E =>
-  Effect.runSync(Effect.flip(effect));
+const failure = <A, E>(effect: Effect.Effect<A, E>): E => Effect.runSync(Effect.flip(effect));
 
 describe("expression language", () => {
   test("arithmetic precedence", () => {
@@ -44,8 +43,7 @@ describe("expression language", () => {
   });
 
   test("builtin functions", () => {
-    const ctx: Ctx = (n) =>
-      n === "a" ? { x: 0, y: 0 } : n === "b" ? { x: 3, y: 4 } : undefined;
+    const ctx: Ctx = (n) => (n === "a" ? { x: 0, y: 0 } : n === "b" ? { x: 3, y: 4 } : undefined);
     expect(compiled("dist(a, b)")(ctx)).toBe(5);
     expect(compiled("mid(a, b)")(ctx)).toEqual({ x: 1.5, y: 2, z: 0 });
     expect(compiled("lerp(0.5, 0, 1, 10, 20)")(emptyCtx)).toBe(15);

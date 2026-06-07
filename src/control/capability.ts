@@ -11,9 +11,7 @@ export interface Capability {
   /** JSON Schema for the command payload — advertised to clients on connect. */
   readonly schema: JsonSchema.JsonSchema;
   /** Validate a raw payload against the capability's schema and execute it. */
-  readonly handle: (
-    payload: unknown
-  ) => Effect.Effect<void, Schema.SchemaError>;
+  readonly handle: (payload: unknown) => Effect.Effect<void, Schema.SchemaError>;
 }
 
 /** The decoded command a capability handler receives: tag + payload fields. */
@@ -26,13 +24,10 @@ type Command<T extends string, Fields extends Schema.Struct.Fields> = {
  * handler. The schema/handler types are tied together here so the surface
  * gets full inference; consumers only ever see the erased `Capability`.
  */
-export const capability = <
-  const T extends string,
-  Fields extends Schema.Struct.Fields,
->(
+export const capability = <const T extends string, Fields extends Schema.Struct.Fields>(
   type: T,
   fields: Fields,
-  execute: (command: Command<T, Fields>) => Effect.Effect<void>
+  execute: (command: Command<T, Fields>) => Effect.Effect<void>,
 ): Capability => {
   const schema = Schema.Struct({ type: Schema.Literal(type), ...fields });
   const decode = Schema.decodeUnknownEffect(schema);
@@ -44,7 +39,7 @@ export const capability = <
         // The struct's mapped Type doesn't unify with Command<T, Fields>
         // inside a generic body (higher-order mapped types), but they are
         // the same shape — assert once here.
-        Effect.flatMap((command) => execute(command as Command<T, Fields>))
+        Effect.flatMap((command) => execute(command as Command<T, Fields>)),
       ) as Effect.Effect<void, Schema.SchemaError>,
   };
 };

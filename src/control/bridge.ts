@@ -79,9 +79,7 @@ export const runControlBridge = Effect.gen(function* () {
             next.add(clientId);
             return [current.size === 0, next] as const;
           }).pipe(
-            Effect.flatMap((wasInactive) =>
-              wasInactive ? activateSurfaces : Effect.void
-            ),
+            Effect.flatMap((wasInactive) => (wasInactive ? activateSurfaces : Effect.void)),
             Effect.andThen(channel.send(clientId, advertisement)),
           ),
         MessageReceived: ({ payload }) =>

@@ -1,6 +1,10 @@
 import { Array, Option, Order, Schema as S, pipe } from "effect";
 
-export const LandmarkPoint = S.Struct({ x: S.Number, y: S.Number });
+export const LandmarkPoint = S.Struct({
+  x: S.Number,
+  y: S.Number,
+  z: S.optional(S.Number),
+});
 export type LandmarkPoint = typeof LandmarkPoint.Type;
 
 export const TrackedAnchor = S.Struct({
@@ -91,7 +95,8 @@ export const matchTracked = (
  */
 export const mirror = (
   landmarks: ReadonlyArray<LandmarkPoint>,
-): Array<LandmarkPoint> => landmarks.map((point) => ({ x: 1 - point.x, y: point.y }));
+): Array<LandmarkPoint> =>
+  landmarks.map((point) => ({ x: 1 - point.x, y: point.y, z: point.z }));
 
 /** Landmark lookup by named index that tolerates missing entries. */
 export const landmarkAt = (

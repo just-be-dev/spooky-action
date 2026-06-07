@@ -1,0 +1,29 @@
+src/ui/tracking.ts
+  s_73a22118924018::t_1103d7f2fa4e66 26,62,92
+src/gesture/expr.ts
+  s_73a22118924018::t_1103d7f2fa4e66 20-22,28,35,117,142,148,171,192
+src/control/bridge.ts
+  s_73a22118924018::t_1103d7f2fa4e66 82
+src/control/capability.ts
+  s_73a22118924018::t_1103d7f2fa4e66 14,27,30,42
+src/gesture/expr.test.ts
+  s_73a22118924018::t_1103d7f2fa4e66 11,46
+src/ui/entry.ts
+  s_73a22118924018::t_1103d7f2fa4e66 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "71442059583320631392cda8c0d8fd6fb12436f6",
+  "prompts": {},
+  "sessions": {
+    "s_73a22118924018": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15d43666affexOkisw7I8w2Nnn",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

@@ -97,9 +97,16 @@ type SocketState = typeof SocketState.Type;
 const SurfaceCapability = S.Struct({ type: S.String, schema: S.Unknown });
 type SurfaceCapability = typeof SurfaceCapability.Type;
 
-const CapabilityAdvertisement = S.Struct({
-  type: S.Literal("capabilities"),
+const ControlSurface = S.Struct({
+  id: S.String,
+  label: S.String,
   capabilities: S.Array(SurfaceCapability),
+});
+type ControlSurface = typeof ControlSurface.Type;
+
+const SurfacesAdvertisement = S.Struct({
+  type: S.Literal("surfaces"),
+  surfaces: S.Array(ControlSurface),
 });
 
 const RuleFieldValue = S.Union([S.String, S.Number, S.Boolean]);
@@ -107,6 +114,7 @@ const GestureRule = S.Struct({
   id: S.String,
   gesture: S.String,
   when: S.String,
+  surface: S.String,
   capability: S.String,
   fields: S.Record(S.String, RuleFieldValue),
 });
@@ -117,6 +125,7 @@ const defaultGestureRules: ReadonlyArray<GestureRule> = [
     id: "pinch.potential.circle",
     gesture: "pinch",
     when: "state == 'potential' || state == 'active'",
+    surface: "mac",
     capability: "circle",
     fields: { id: "key", x: "pos.x", y: "pos.y", r: "lerp(pinch, 0.35, 0.9, 8, 64)" },
   },
@@ -124,6 +133,7 @@ const defaultGestureRules: ReadonlyArray<GestureRule> = [
     id: "pinch.active.click",
     gesture: "pinch",
     when: "state == 'active' && previousState != 'active' && hands.count == 1",
+    surface: "mac",
     capability: "click",
     fields: { x: "pos.x", y: "pos.y" },
   },
@@ -131,6 +141,7 @@ const defaultGestureRules: ReadonlyArray<GestureRule> = [
     id: "pinch.off.hide",
     gesture: "pinch",
     when: "state == 'off' && previousState != 'off'",
+    surface: "mac",
     capability: "hide",
     fields: { id: "key" },
   },
@@ -138,6 +149,7 @@ const defaultGestureRules: ReadonlyArray<GestureRule> = [
     id: "mouth-ring.showing.circle",
     gesture: "mouth-ring",
     when: "state == 'showing'",
+    surface: "mac",
     capability: "circle",
     fields: { id: "key", x: "pos.x", y: "pos.y", r: "lerp(open, 0.05, 0.2, 12, 60)" },
   },
@@ -145,6 +157,7 @@ const defaultGestureRules: ReadonlyArray<GestureRule> = [
     id: "mouth-ring.idle.hide",
     gesture: "mouth-ring",
     when: "state == 'idle' && previousState != 'idle'",
+    surface: "mac",
     capability: "hide",
     fields: { id: "key" },
   },
@@ -191,7 +204,7 @@ export const Model = S.Struct({
   defs: DefsState,
   tracker: TrackerState,
   socket: SocketState,
-  surfaceCapabilities: S.Array(SurfaceCapability),
+  controlSurfaces: S.Array(ControlSurface),
   rules: S.Array(GestureRule),
   frame: Frame,
   handTracking: TrackState,
@@ -224,7 +237,7 @@ export const FailedAcquireEngine = m("FailedAcquireEngine", {
 });
 export const ReleasedEngine = m("ReleasedEngine");
 export const ConnectedSocket = m("ConnectedSocket", {
-  capabilities: S.Array(SurfaceCapability),
+  surfaces: S.Array(ControlSurface),
 });
 export const FailedConnectSocket = m("FailedConnectSocket", {
   message: S.String,
@@ -249,6 +262,10 @@ export const CompletedHideAll = m("CompletedHideAll");
 export const SelectedRuleCapability = m("SelectedRuleCapability", {
   ruleId: S.String,
   capability: S.String,
+});
+export const SelectedRuleSurface = m("SelectedRuleSurface", {
+  ruleId: S.String,
+  surface: S.String,
 });
 
 export const Message = S.Union([
@@ -276,6 +293,7 @@ export const Message = S.Union([
   FailedFrame,
   CompletedHideAll,
   SelectedRuleCapability,
+  SelectedRuleSurface,
 ]);
 export type Message = typeof Message.Type;
 
@@ -291,7 +309,7 @@ const CameraResource = ManagedResource.tag<MediaStream>()("Camera");
 const EngineResource = ManagedResource.tag<GestureEngine>()("Engine");
 type SocketConnection = Readonly<{
   socket: WebSocket;
-  capabilities: ReadonlyArray<SurfaceCapability>;
+  surfaces: ReadonlyArray<ControlSurface>;
 }>;
 
 const SocketResource = ManagedResource.tag<SocketConnection>()("Socket");
@@ -309,7 +327,7 @@ export const init: Runtime.ProgramInit<Model, Message, void, never, Services> = 
     defs: LoadingDefs(),
     tracker: LoadingModels(),
     socket: SocketDisconnected(),
-    surfaceCapabilities: [],
+    controlSurfaces: [],
     rules: defaultGestureRules,
     frame: emptyFrame,
     handTracking: initialTrackState,
@@ -325,6 +343,20 @@ export const init: Runtime.ProgramInit<Model, Message, void, never, Services> = 
 
 type UpdateReturn = readonly [Model, ReadonlyArray<Command.Command<Message, never, Services>>];
 const withUpdateReturn = M.withReturnType<UpdateReturn>();
+
+const capabilitiesForSurface = (
+  surfaces: ReadonlyArray<ControlSurface>,
+  surfaceId: string,
+): ReadonlyArray<SurfaceCapability> =>
+  surfaces.find((surface) => surface.id === surfaceId)?.capabilities ?? [];
+
+const firstCapabilityForSurface = (
+  surfaces: ReadonlyArray<ControlSurface>,
+  surfaceId: string,
+): Option.Option<string> => {
+  const capability = capabilitiesForSurface(surfaces, surfaceId)[0];
+  return capability === undefined ? Option.none() : Option.some(capability.type);
+};
 
 export const update = (model: Model, message: Message): UpdateReturn =>
   M.value(message).pipe(
@@ -357,10 +389,10 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       ],
       ReleasedEngine: () => [model, [HideAllRings()]],
 
-      ConnectedSocket: ({ capabilities }) => [
+      ConnectedSocket: ({ surfaces }) => [
         evo(model, {
           socket: () => SocketConnected(),
-          surfaceCapabilities: () => capabilities,
+          controlSurfaces: () => surfaces,
         }),
         [],
       ],
@@ -371,7 +403,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       DisconnectedSocket: () => [
         evo(model, {
           socket: () => SocketDisconnected(),
-          surfaceCapabilities: () => [],
+          controlSurfaces: () => [],
         }),
         [],
       ],
@@ -393,7 +425,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
               handTracking: model.handTracking,
               faceTracking: model.faceTracking,
               rules: model.rules,
-              surfaceCapabilities: model.surfaceCapabilities,
+              controlSurfaces: model.controlSurfaces,
             }),
           ],
         ];
@@ -427,6 +459,25 @@ export const update = (model: Model, message: Message): UpdateReturn =>
                 return rule;
               }
               return { ...rule, capability };
+            }),
+        }),
+        [],
+      ],
+      SelectedRuleSurface: ({ ruleId, surface }) => [
+        evo(model, {
+          rules: () =>
+            model.rules.map((rule) => {
+              if (rule.id !== ruleId) {
+                return rule;
+              }
+              return {
+                ...rule,
+                surface,
+                capability: pipe(
+                  firstCapabilityForSurface(model.controlSurfaces, surface),
+                  Option.getOrElse(() => rule.capability),
+                ),
+              };
             }),
         }),
         [],
@@ -483,7 +534,7 @@ export const AttachCamera = Command.define(
   ),
 );
 
-type ControlCommand = { type: string } & Record<string, unknown>;
+type ControlCommand = { surface: string; type: string } & Record<string, unknown>;
 
 const sendControlCommands = (messages: ReadonlyArray<ControlCommand>) =>
   SocketResource.get.pipe(
@@ -500,7 +551,7 @@ const sendControlCommands = (messages: ReadonlyArray<ControlCommand>) =>
 export const HideAllRings = Command.define(
   "HideAllRings",
   CompletedHideAll,
-)(sendControlCommands([{ type: "hideall", id: "*" }]).pipe(Effect.as(CompletedHideAll())));
+)(sendControlCommands([{ surface: "mac", type: "hideall" }]).pipe(Effect.as(CompletedHideAll())));
 
 const commandToEcho = (message: ControlCommand): Option.Option<Echo> => {
   if (message.type === "circle") {
@@ -535,7 +586,7 @@ const boundCommand = (
     if (!parseExpr(rule.when)(ctx)) {
       return Option.none();
     }
-    const command: ControlCommand = { type: rule.capability };
+    const command: ControlCommand = { surface: rule.surface, type: rule.capability };
     for (const [field, value] of Object.entries(rule.fields)) {
       command[field] = typeof value === "string" ? parseExpr(value)(ctx) : value;
     }
@@ -548,13 +599,15 @@ const boundCommand = (
 const bindGestureRules = (
   statuses: ReadonlyArray<InstanceStatus>,
   rules: ReadonlyArray<GestureRule>,
-  capabilities: ReadonlyArray<SurfaceCapability>,
+  surfaces: ReadonlyArray<ControlSurface>,
   globals: Readonly<{ hands: { count: number }; faces: { count: number } }>,
 ): ReadonlyArray<ControlCommand> => {
-  const supportedCapabilities = new Set(capabilities.map(({ type }) => type));
+  const supportedCapabilitiesBySurface = new Map(
+    surfaces.map((surface) => [surface.id, new Set(surface.capabilities.map(({ type }) => type))]),
+  );
   return statuses.flatMap((status) =>
     rules.flatMap((rule) => {
-      if (!supportedCapabilities.has(rule.capability)) {
+      if (!supportedCapabilitiesBySurface.get(rule.surface)?.has(rule.capability)) {
         return [];
       }
       return Option.match(boundCommand(status, rule, globals), {
@@ -589,12 +642,12 @@ export const ProcessFrame = Command.define(
     handTracking: TrackState,
     faceTracking: TrackState,
     rules: S.Array(GestureRule),
-    surfaceCapabilities: S.Array(SurfaceCapability),
+    controlSurfaces: S.Array(ControlSurface),
   },
   ProcessedFrame,
   SkippedFrame,
   FailedFrame,
-)(({ lastVideoTime, handTracking, faceTracking, rules, surfaceCapabilities }) =>
+)(({ lastVideoTime, handTracking, faceTracking, rules, controlSurfaces }) =>
   Effect.gen(function* () {
     const { handLandmarker, faceLandmarker } = yield* LandmarkersResource.get;
     const engine = yield* EngineResource.get;
@@ -652,7 +705,7 @@ export const ProcessFrame = Command.define(
     ];
 
     const { statuses } = yield* engine.step(entities);
-    const commands = bindGestureRules(statuses, rules, surfaceCapabilities, {
+    const commands = bindGestureRules(statuses, rules, controlSurfaces, {
       hands: { count: entities.filter((entity) => entity.type === "hand").length },
       faces: { count: entities.filter((entity) => entity.type === "face").length },
     });
@@ -778,7 +831,7 @@ export const managedResources = ManagedResource.make<Model, Message>()((entry) =
     acquire: () =>
       Effect.callback<SocketConnection, SocketConnectError>((resume) => {
         const socket = new WebSocket(`ws://${location.host}/ws`);
-        const decodeAdvertisement = S.decodeUnknownOption(CapabilityAdvertisement);
+        const decodeAdvertisement = S.decodeUnknownOption(SurfacesAdvertisement);
         let isComplete = false;
         const complete = (effect: Effect.Effect<SocketConnection, SocketConnectError>) => {
           if (isComplete) {
@@ -795,7 +848,7 @@ export const managedResources = ManagedResource.make<Model, Message>()((entry) =
               complete(
                 Effect.succeed({
                   socket,
-                  capabilities: maybeAdvertisement.value.capabilities,
+                  surfaces: maybeAdvertisement.value.surfaces,
                 }),
               );
             }
@@ -805,7 +858,7 @@ export const managedResources = ManagedResource.make<Model, Message>()((entry) =
           complete(
             Effect.fail(
               new SocketConnectError({
-                message: "failed to connect to overlay bridge",
+                message: "failed to connect to control bridge",
               }),
             ),
           );
@@ -814,7 +867,7 @@ export const managedResources = ManagedResource.make<Model, Message>()((entry) =
           complete(
             Effect.fail(
               new SocketConnectError({
-                message: "overlay bridge closed before advertising capabilities",
+                message: "control bridge closed before advertising surfaces",
               }),
             ),
           );
@@ -830,7 +883,7 @@ export const managedResources = ManagedResource.make<Model, Message>()((entry) =
         return Effect.sync(removeHandlers);
       }),
     release: ({ socket }) => Effect.sync(() => socket.close()),
-    onAcquired: ({ capabilities }) => ConnectedSocket({ capabilities }),
+    onAcquired: ({ surfaces }) => ConnectedSocket({ surfaces }),
     onAcquireError: (error) => FailedConnectSocket({ message: errorMessage(error) }),
     onReleased: () => DisconnectedSocket(),
   }),
@@ -1040,31 +1093,49 @@ const statusLine = (status: GestureStatus): Html => {
   );
 };
 
-const socketLine = (socket: SocketState, capabilities: ReadonlyArray<SurfaceCapability>): Html => {
+const socketLine = (socket: SocketState, surfaces: ReadonlyArray<ControlSurface>): Html => {
   const h = html<Message>();
   return M.value(socket).pipe(
     M.tagsExhaustive({
-      SocketDisconnected: () => h.div([], ["overlay bridge: disconnected"]),
+      SocketDisconnected: () => h.div([], ["control bridge: disconnected"]),
       SocketConnected: () =>
         h.div(
           [],
           [
-            `overlay bridge: connected (${capabilities
-              .map((capability) => capability.type)
+            `control bridge: connected (${surfaces
+              .map(
+                (surface) =>
+                  `${surface.id}: ${surface.capabilities
+                    .map((capability) => capability.type)
+                    .join(", ")}`,
+              )
               .join(", ")})`,
           ],
         ),
       SocketFailed: ({ message }) =>
-        h.div([h.Class("text-red-400")], [`overlay bridge: ${message}`]),
+        h.div([h.Class("text-red-400")], [`control bridge: ${message}`]),
     }),
   );
 };
 
+const surfaceOptions = (
+  rule: GestureRule,
+  surfaces: ReadonlyArray<ControlSurface>,
+): ReadonlyArray<string> => {
+  const advertised = surfaces.map((surface) => surface.id);
+  if (advertised.includes(rule.surface)) {
+    return advertised;
+  }
+  return [rule.surface, ...advertised];
+};
+
 const capabilityOptions = (
   rule: GestureRule,
-  capabilities: ReadonlyArray<SurfaceCapability>,
+  surfaces: ReadonlyArray<ControlSurface>,
 ): ReadonlyArray<string> => {
-  const advertised = capabilities.map((capability) => capability.type);
+  const advertised = capabilitiesForSurface(surfaces, rule.surface).map(
+    (capability) => capability.type,
+  );
   if (advertised.includes(rule.capability)) {
     return advertised;
   }
@@ -1076,14 +1147,29 @@ const fieldsText = (rule: GestureRule): string =>
     .map(([field, value]) => `${field}=${value}`)
     .join(", ");
 
-const ruleLine = (rule: GestureRule, capabilities: ReadonlyArray<SurfaceCapability>): Html => {
+const ruleLine = (rule: GestureRule, surfaces: ReadonlyArray<ControlSurface>): Html => {
   const h = html<Message>();
   return h.div(
     [h.Class("flex items-center gap-2")],
     [
       h.span([h.Class("min-w-[190px]")], [`${rule.gesture}: ${rule.when}`]),
       Ui.Select.view<Message>({
-        id: `rule-${rule.id}`,
+        id: `rule-${rule.id}-surface`,
+        value: rule.surface,
+        onChange: (surface) => SelectedRuleSurface({ ruleId: rule.id, surface }),
+        toView: (attributes) =>
+          h.select(
+            [
+              ...attributes.select,
+              h.Class("bg-[#111927] border border-[#293548] rounded px-2 py-0.5"),
+            ],
+            surfaceOptions(rule, surfaces).map((surface) =>
+              h.option([h.Value(surface)], [surface]),
+            ),
+          ),
+      }),
+      Ui.Select.view<Message>({
+        id: `rule-${rule.id}-capability`,
         value: rule.capability,
         onChange: (capability) => SelectedRuleCapability({ ruleId: rule.id, capability }),
         toView: (attributes) =>
@@ -1092,7 +1178,7 @@ const ruleLine = (rule: GestureRule, capabilities: ReadonlyArray<SurfaceCapabili
               ...attributes.select,
               h.Class("bg-[#111927] border border-[#293548] rounded px-2 py-0.5"),
             ],
-            capabilityOptions(rule, capabilities).map((capability) =>
+            capabilityOptions(rule, surfaces).map((capability) =>
               h.option([h.Value(capability)], [capability]),
             ),
           ),
@@ -1108,7 +1194,7 @@ const rulesView = (model: Model): Html => {
     [h.Class("mt-2 space-y-1")],
     [
       h.div([h.Class("text-slate-400")], ["gesture rules"]),
-      ...model.rules.map((rule) => ruleLine(rule, model.surfaceCapabilities)),
+      ...model.rules.map((rule) => ruleLine(rule, model.controlSurfaces)),
     ],
   );
 };
@@ -1119,7 +1205,7 @@ const panelView = (model: Model): Html => {
     [h.Class("w-[640px] font-mono text-xs leading-relaxed text-[#93a4b8] whitespace-pre-wrap")],
     [
       defsLine(model.defs),
-      socketLine(model.socket, model.surfaceCapabilities),
+      socketLine(model.socket, model.controlSurfaces),
       rulesView(model),
       ...pipe(
         model.maybeFrameError,

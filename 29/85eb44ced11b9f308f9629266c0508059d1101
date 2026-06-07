@@ -1,0 +1,20 @@
+src/ui/tracking.ts
+  s_2098d091bb56d8::t_03c43a6d5b4d29 98
+  s_2098d091bb56d8::t_1bd09dc1a461a1 3-7,99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "2985eb44ced11b9f308f9629266c0508059d1101",
+  "prompts": {},
+  "sessions": {
+    "s_2098d091bb56d8": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15fb28592ffePSPawbrOv2sNTx",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

@@ -57,9 +57,9 @@ function handAt(ratio: number, id = 1): Entity {
   return { type: "hand", id, landmarks, worldLandmarks, names: HAND_LANDMARKS };
 }
 
-function foreshortenedHand(id = 1): Entity {
-  const hand = handAt(0.2, id);
-  hand.worldLandmarks = handAt(1.0, id).worldLandmarks;
+function depthCompressedHand(id = 1): Entity {
+  const hand = handAt(1.0, id);
+  hand.worldLandmarks = handAt(0.2, id).worldLandmarks;
   return hand;
 }
 
@@ -127,9 +127,9 @@ describe("pinch gesture (real def)", () => {
     );
   });
 
-  test("world landmarks keep open pinch stable under screen foreshortening", () => {
+  test("pinch detection ignores world-depth compression", () => {
     const engine = makeEngine([pinch]);
-    const r = run(engine, [foreshortenedHand()]);
+    const r = run(engine, [depthCompressedHand()]);
     expect(r.statuses[0]!.state).toBe("off");
     expect(r.statuses[0]!.metrics.pinch).toBeCloseTo(1);
   });

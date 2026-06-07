@@ -1,0 +1,40 @@
+src/defs/pinch-click.json
+  s_2098d091bb56d8::t_1bd09dc1a461a1 5
+src/gesture/expr.ts
+  s_2098d091bb56d8::t_49143dfcefae4d 29-30
+  s_2098d091bb56d8::t_1bd09dc1a461a1 16-18,31-35,50
+src/gesture/engine.ts
+  s_2098d091bb56d8::t_582e4c9aac7a4f 269-272,274
+  s_2098d091bb56d8::t_1bd09dc1a461a1 73,201-205
+src/gesture/engine.test.ts
+  s_2098d091bb56d8::t_4875c635cdbe41 63-64,67-70,133-137
+  s_4ab32b8129d115::t_184345a8923cb7 65-66,139-140
+  s_2098d091bb56d8::t_fa6f13069c9bd0 138
+src/gesture/expr.test.ts
+  s_2098d091bb56d8::t_b971c510bbe42a 50
+  s_2098d091bb56d8::t_4875c635cdbe41 57-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "abfdabaf72c6935b02ad8f9a7f7c77f9d87741a9",
+  "prompts": {},
+  "sessions": {
+    "s_2098d091bb56d8": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15fb28592ffePSPawbrOv2sNTx",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    },
+    "s_4ab32b8129d115": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "406152d0-430f-4991-bc0c-de7945549ffa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

@@ -1,0 +1,65 @@
+[tools]
+bun = "1.3.1"
+
+[settings]
+experimental = true
+pin = true
+
+[hooks]
+postinstall = "bun install"
+
+[env]
+_.path = "node_modules/.bin"
+
+[tasks.dev]
+description = "Start development server (Vite + Bun backend)"
+run = """
+bun src/main.ts &
+SERVER_PID=$!
+trap "kill $SERVER_PID 2>/dev/null" EXIT
+vite
+"""
+
+[tasks.server]
+description = "Start Bun backend server (port 7900)"
+run = "bun src/main.ts"
+
+[tasks.build]
+description = "Build for production"
+run = "vite build"
+
+[tasks.preview]
+description = "Preview production build"
+run = "vite preview"
+
+[tasks.typecheck]
+description = "Type-check with tsgo"
+run = "tsgo --noEmit"
+
+[tasks.format]
+description = "Format with oxfmt"
+run = "oxfmt --write src"
+
+[tasks."format:check"]
+description = "Check formatting with oxfmt"
+run = "oxfmt --check src"
+
+[tasks.lint]
+description = "Lint with oxlint"
+run = "oxlint src --tsconfig tsconfig.json"
+
+[tasks.test]
+description = "Run app tests"
+depends = ["test:engine", "test:ui"]
+
+[tasks."test:ui"]
+description = "Run UI story tests with Vitest"
+run = "vitest run"
+
+[tasks."test:engine"]
+description = "Run gesture engine tests with bun test"
+run = "bun test src/gesture"
+
+[tasks.prepare]
+description = "Patch effect-tsgo"
+run = "effect-tsgo patch"

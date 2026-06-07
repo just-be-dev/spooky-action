@@ -488,7 +488,8 @@ const formatMetricValue = (value: unknown): string => {
   }
   if (value !== null && typeof value === "object" && "x" in value && "y" in value) {
     const point = value as LandmarkPoint;
-    return `(${point.x.toFixed(2)}, ${point.y.toFixed(2)})`;
+    const z = point.z === undefined ? "" : `, ${point.z.toFixed(2)}`;
+    return `(${point.x.toFixed(2)}, ${point.y.toFixed(2)}${z})`;
   }
   return String(value);
 };
@@ -524,6 +525,7 @@ export const ProcessFrame = Command.define(
       return {
         hands: hands.landmarks.map((rawLandmarks, index) => ({
           landmarks: mirror(rawLandmarks),
+          worldLandmarks: hands.worldLandmarks[index],
           nullableLabel: hands.handedness[index]?.[0]?.categoryName,
         })),
         faces: faces.faceLandmarks.map(mirror),
@@ -547,10 +549,11 @@ export const ProcessFrame = Command.define(
       ...Array.zipWith(
         detected.hands,
         nextHandTracking.tracked,
-        ({ landmarks, nullableLabel }, trackedAnchor): Entity => ({
+        ({ landmarks, worldLandmarks, nullableLabel }, trackedAnchor): Entity => ({
           type: "hand",
           id: trackedAnchor.id,
           landmarks,
+          worldLandmarks,
           names: HAND_LANDMARKS,
           label: nullableLabel,
         }),

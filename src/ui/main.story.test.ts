@@ -30,17 +30,18 @@ import {
 import type { GestureDef } from "../gesture/engine";
 import { initialTrackState } from "./tracking";
 
-const pinchClickDef: GestureDef = {
-  name: "pinch-click",
+const pinchDef: GestureDef = {
+  name: "pinch",
   source: "hand",
-  states: {},
+  initial: "off",
+  states: { off: {} },
 };
 
 const [initialModel] = init();
 
 const trackingModel: Model = {
   ...initialModel,
-  defs: LoadedDefs({ defs: [pinchClickDef] }),
+  defs: LoadedDefs({ defs: [pinchDef] }),
   tracker: Tracking(),
 };
 
@@ -50,11 +51,11 @@ describe("update", () => {
       Story.story(
         update,
         Story.with(initialModel),
-        Story.message(SucceededLoadDefs({ defs: [pinchClickDef] })),
+        Story.message(SucceededLoadDefs({ defs: [pinchDef] })),
         Story.model((model) => {
           if (model.defs._tag === "LoadedDefs") {
             expect(model.defs.defs).toHaveLength(1);
-            expect(model.defs.defs[0]?.name).toBe("pinch-click");
+            expect(model.defs.defs[0]?.name).toBe("pinch");
           } else {
             throw new Error("Expected LoadedDefs");
           }
@@ -86,10 +87,7 @@ describe("update", () => {
           expect(model.defs._tag).toBe("LoadingDefs");
         }),
         Story.Command.expectHas(LoadDefs),
-        Story.Command.resolve(
-          LoadDefs,
-          SucceededLoadDefs({ defs: [pinchClickDef] }),
-        ),
+        Story.Command.resolve(LoadDefs, SucceededLoadDefs({ defs: [pinchDef] })),
         Story.model((model) => {
           expect(model.defs._tag).toBe("LoadedDefs");
         }),
@@ -196,9 +194,10 @@ describe("update", () => {
               ],
               statuses: [
                 {
-                  key: "pinch-click#1",
-                  gesture: "pinch-click",
-                  state: "armed",
+                  key: "pinch#1",
+                  gesture: "pinch",
+                  state: "active",
+                  previousState: "potential",
                   metrics: "pinch=0.03",
                   maybeError: Option.none(),
                 },
@@ -213,7 +212,7 @@ describe("update", () => {
           expect(model.isProcessingFrame).toBe(false);
           expect(model.lastVideoTime).toBe(1.25);
           expect(model.frame.entities).toHaveLength(1);
-          expect(model.frame.statuses[0]?.state).toBe("armed");
+          expect(model.frame.statuses[0]?.state).toBe("active");
           expect(model.frame.echoes).toHaveLength(1);
           expect(model.handTracking.nextId).toBe(2);
         }),

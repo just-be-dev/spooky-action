@@ -2,34 +2,18 @@
 // gesture engine (src/gesture/), rebuilt as a Foldkit program.
 // Detection runs in the ProcessFrame Command; the camera, MediaPipe models,
 // gesture engine, and overlay WebSocket are Managed Resources whose
-// lifecycles follow the Model. Emitted wire messages go over /ws to the
-// backend (src/main.ts), which drives the native overlay.
-import {
-  FaceLandmarker,
-  FilesetResolver,
-  HandLandmarker,
-} from "@mediapipe/tasks-vision";
-import {
-  Array,
-  Effect,
-  Match as M,
-  Option,
-  Schema as S,
-  Stream,
-  pipe,
-} from "effect";
-import { Canvas, Command, ManagedResource, Runtime, Subscription } from "foldkit";
+// lifecycles follow the Model. Gesture rules turn state snapshots into
+// overlay commands sent over /ws to the backend (src/main.ts).
+import { FaceLandmarker, FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
+import { Array, Effect, Match as M, Option, Schema as S, Stream, pipe } from "effect";
+import { Canvas, Command, ManagedResource, Runtime, Subscription, Ui } from "foldkit";
 import { type Document, type Html, html } from "foldkit/html";
 import { m } from "foldkit/message";
 import { ts } from "foldkit/schema";
 import { evo } from "foldkit/struct";
 
-import {
-  GestureDef,
-  GestureEngine,
-  type Entity,
-  type WireMessage,
-} from "../gesture/engine";
+import { GestureDef, GestureEngine, type Entity, type InstanceStatus } from "../gesture/engine";
+import { parseExpr } from "../gesture/expr";
 import { FACE_LANDMARKS, HAND_LANDMARKS } from "../landmarks";
 import {
   LandmarkPoint,
@@ -46,8 +30,7 @@ const MAX_HANDS = 4;
 const MAX_FACES = 2;
 const VIDEO_ELEMENT_ID = "camera";
 
-const MEDIAPIPE_WASM_URL =
-  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
+const MEDIAPIPE_WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
 const HAND_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task";
 const FACE_MODEL_URL =
@@ -61,10 +44,9 @@ export class VideoElementNotFound extends S.TaggedErrorClass<VideoElementNotFoun
   { message: S.String },
 ) {}
 
-export class DefsRequestError extends S.TaggedErrorClass<DefsRequestError>()(
-  "DefsRequestError",
-  { message: S.String },
-) {}
+export class DefsRequestError extends S.TaggedErrorClass<DefsRequestError>()("DefsRequestError", {
+  message: S.String,
+}) {}
 
 export class LandmarkerLoadError extends S.TaggedErrorClass<LandmarkerLoadError>()(
   "LandmarkerLoadError",
@@ -112,6 +94,62 @@ export const SocketFailed = ts("SocketFailed", { message: S.String });
 const SocketState = S.Union([SocketDisconnected, SocketConnected, SocketFailed]);
 type SocketState = typeof SocketState.Type;
 
+const SurfaceCapability = S.Struct({ type: S.String, schema: S.Unknown });
+type SurfaceCapability = typeof SurfaceCapability.Type;
+
+const CapabilityAdvertisement = S.Struct({
+  type: S.Literal("capabilities"),
+  capabilities: S.Array(SurfaceCapability),
+});
+
+const RuleFieldValue = S.Union([S.String, S.Number, S.Boolean]);
+const GestureRule = S.Struct({
+  id: S.String,
+  gesture: S.String,
+  when: S.String,
+  capability: S.String,
+  fields: S.Record(S.String, RuleFieldValue),
+});
+type GestureRule = typeof GestureRule.Type;
+
+const defaultGestureRules: ReadonlyArray<GestureRule> = [
+  {
+    id: "pinch.potential.circle",
+    gesture: "pinch",
+    when: "state == 'potential' || state == 'active'",
+    capability: "circle",
+    fields: { id: "key", x: "pos.x", y: "pos.y", r: "lerp(pinch, 0.35, 0.9, 8, 64)" },
+  },
+  {
+    id: "pinch.active.click",
+    gesture: "pinch",
+    when: "state == 'active' && previousState != 'active' && hands.count == 1",
+    capability: "click",
+    fields: { x: "pos.x", y: "pos.y" },
+  },
+  {
+    id: "pinch.off.hide",
+    gesture: "pinch",
+    when: "state == 'off' && previousState != 'off'",
+    capability: "hide",
+    fields: { id: "key" },
+  },
+  {
+    id: "mouth-ring.showing.circle",
+    gesture: "mouth-ring",
+    when: "state == 'showing'",
+    capability: "circle",
+    fields: { id: "key", x: "pos.x", y: "pos.y", r: "lerp(open, 0.05, 0.2, 12, 60)" },
+  },
+  {
+    id: "mouth-ring.idle.hide",
+    gesture: "mouth-ring",
+    when: "state == 'idle' && previousState != 'idle'",
+    capability: "hide",
+    fields: { id: "key" },
+  },
+];
+
 const FrameEntity = S.Struct({
   kind: S.Literals(["hand", "face"]),
   id: S.Number,
@@ -124,6 +162,7 @@ const GestureStatus = S.Struct({
   key: S.String,
   gesture: S.String,
   state: S.String,
+  previousState: S.String,
   metrics: S.String,
   maybeError: S.Option(S.String),
 });
@@ -152,6 +191,8 @@ export const Model = S.Struct({
   defs: DefsState,
   tracker: TrackerState,
   socket: SocketState,
+  surfaceCapabilities: S.Array(SurfaceCapability),
+  rules: S.Array(GestureRule),
   frame: Frame,
   handTracking: TrackState,
   faceTracking: TrackState,
@@ -182,7 +223,9 @@ export const FailedAcquireEngine = m("FailedAcquireEngine", {
   message: S.String,
 });
 export const ReleasedEngine = m("ReleasedEngine");
-export const ConnectedSocket = m("ConnectedSocket");
+export const ConnectedSocket = m("ConnectedSocket", {
+  capabilities: S.Array(SurfaceCapability),
+});
 export const FailedConnectSocket = m("FailedConnectSocket", {
   message: S.String,
 });
@@ -203,6 +246,10 @@ export const ProcessedFrame = m("ProcessedFrame", {
 export const SkippedFrame = m("SkippedFrame");
 export const FailedFrame = m("FailedFrame", { message: S.String });
 export const CompletedHideAll = m("CompletedHideAll");
+export const SelectedRuleCapability = m("SelectedRuleCapability", {
+  ruleId: S.String,
+  capability: S.String,
+});
 
 export const Message = S.Union([
   AcquiredLandmarkers,
@@ -228,6 +275,7 @@ export const Message = S.Union([
   SkippedFrame,
   FailedFrame,
   CompletedHideAll,
+  SelectedRuleCapability,
 ]);
 export type Message = typeof Message.Type;
 
@@ -241,7 +289,12 @@ type Landmarkers = Readonly<{
 const LandmarkersResource = ManagedResource.tag<Landmarkers>()("Landmarkers");
 const CameraResource = ManagedResource.tag<MediaStream>()("Camera");
 const EngineResource = ManagedResource.tag<GestureEngine>()("Engine");
-const SocketResource = ManagedResource.tag<WebSocket>()("Socket");
+type SocketConnection = Readonly<{
+  socket: WebSocket;
+  capabilities: ReadonlyArray<SurfaceCapability>;
+}>;
+
+const SocketResource = ManagedResource.tag<SocketConnection>()("Socket");
 
 type Services =
   | ManagedResource.ServiceOf<typeof LandmarkersResource>
@@ -251,58 +304,47 @@ type Services =
 
 // INIT
 
-export const init: Runtime.ProgramInit<Model, Message, void, never, Services> =
-  () => [
-    {
-      defs: LoadingDefs(),
-      tracker: LoadingModels(),
-      socket: SocketDisconnected(),
-      frame: emptyFrame,
-      handTracking: initialTrackState,
-      faceTracking: initialTrackState,
-      lastVideoTime: -1,
-      isProcessingFrame: false,
-      maybeFrameError: Option.none(),
-    },
-    [LoadDefs()],
-  ];
+export const init: Runtime.ProgramInit<Model, Message, void, never, Services> = () => [
+  {
+    defs: LoadingDefs(),
+    tracker: LoadingModels(),
+    socket: SocketDisconnected(),
+    surfaceCapabilities: [],
+    rules: defaultGestureRules,
+    frame: emptyFrame,
+    handTracking: initialTrackState,
+    faceTracking: initialTrackState,
+    lastVideoTime: -1,
+    isProcessingFrame: false,
+    maybeFrameError: Option.none(),
+  },
+  [LoadDefs()],
+];
 
 // UPDATE
 
-type UpdateReturn = readonly [
-  Model,
-  ReadonlyArray<Command.Command<Message, never, Services>>,
-];
+type UpdateReturn = readonly [Model, ReadonlyArray<Command.Command<Message, never, Services>>];
 const withUpdateReturn = M.withReturnType<UpdateReturn>();
 
 export const update = (model: Model, message: Message): UpdateReturn =>
   M.value(message).pipe(
     withUpdateReturn,
     M.tagsExhaustive({
-      AcquiredLandmarkers: () => [
-        evo(model, { tracker: () => StartingCamera() }),
-        [],
-      ],
+      AcquiredLandmarkers: () => [evo(model, { tracker: () => StartingCamera() }), []],
       FailedAcquireLandmarkers: ({ message }) => [
         evo(model, { tracker: () => FailedTracker({ message }) }),
         [],
       ],
       ReleasedLandmarkers: () => [model, []],
 
-      AcquiredCamera: () => [
-        evo(model, { tracker: () => AttachingCamera() }),
-        [AttachCamera()],
-      ],
+      AcquiredCamera: () => [evo(model, { tracker: () => AttachingCamera() }), [AttachCamera()]],
       FailedAcquireCamera: ({ message }) => [
         evo(model, { tracker: () => FailedTracker({ message }) }),
         [],
       ],
       ReleasedCamera: () => [model, []],
 
-      CompletedAttachCamera: () => [
-        evo(model, { tracker: () => Tracking() }),
-        [],
-      ],
+      CompletedAttachCamera: () => [evo(model, { tracker: () => Tracking() }), []],
       FailedAttachCamera: ({ message }) => [
         evo(model, { tracker: () => FailedTracker({ message }) }),
         [],
@@ -315,8 +357,11 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       ],
       ReleasedEngine: () => [model, [HideAllRings()]],
 
-      ConnectedSocket: () => [
-        evo(model, { socket: () => SocketConnected() }),
+      ConnectedSocket: ({ capabilities }) => [
+        evo(model, {
+          socket: () => SocketConnected(),
+          surfaceCapabilities: () => capabilities,
+        }),
         [],
       ],
       FailedConnectSocket: ({ message }) => [
@@ -324,26 +369,17 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         [],
       ],
       DisconnectedSocket: () => [
-        evo(model, { socket: () => SocketDisconnected() }),
+        evo(model, {
+          socket: () => SocketDisconnected(),
+          surfaceCapabilities: () => [],
+        }),
         [],
       ],
 
-      SucceededLoadDefs: ({ defs }) => [
-        evo(model, { defs: () => LoadedDefs({ defs }) }),
-        [],
-      ],
-      FailedLoadDefs: ({ message }) => [
-        evo(model, { defs: () => FailedDefs({ message }) }),
-        [],
-      ],
-      ClickedReloadDefs: () => [
-        evo(model, { defs: () => LoadingDefs() }),
-        [LoadDefs()],
-      ],
-      PressedReloadKey: () => [
-        evo(model, { defs: () => LoadingDefs() }),
-        [LoadDefs()],
-      ],
+      SucceededLoadDefs: ({ defs }) => [evo(model, { defs: () => LoadedDefs({ defs }) }), []],
+      FailedLoadDefs: ({ message }) => [evo(model, { defs: () => FailedDefs({ message }) }), []],
+      ClickedReloadDefs: () => [evo(model, { defs: () => LoadingDefs() }), [LoadDefs()]],
+      PressedReloadKey: () => [evo(model, { defs: () => LoadingDefs() }), [LoadDefs()]],
 
       TickedFrame: () => {
         if (model.isProcessingFrame) {
@@ -356,6 +392,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
               lastVideoTime: model.lastVideoTime,
               handTracking: model.handTracking,
               faceTracking: model.faceTracking,
+              rules: model.rules,
+              surfaceCapabilities: model.surfaceCapabilities,
             }),
           ],
         ];
@@ -371,10 +409,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         }),
         [],
       ],
-      SkippedFrame: () => [
-        evo(model, { isProcessingFrame: () => false }),
-        [],
-      ],
+      SkippedFrame: () => [evo(model, { isProcessingFrame: () => false }), []],
       FailedFrame: ({ message }) => [
         evo(model, {
           isProcessingFrame: () => false,
@@ -384,6 +419,18 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       ],
 
       CompletedHideAll: () => [model, []],
+      SelectedRuleCapability: ({ ruleId, capability }) => [
+        evo(model, {
+          rules: () =>
+            model.rules.map((rule) => {
+              if (rule.id !== ruleId) {
+                return rule;
+              }
+              return { ...rule, capability };
+            }),
+        }),
+        [],
+      ],
     }),
   );
 
@@ -393,9 +440,7 @@ const findVideo = Effect.suspend(() => {
   const element = document.getElementById(VIDEO_ELEMENT_ID);
   return element instanceof HTMLVideoElement
     ? Effect.succeed(element)
-    : Effect.fail(
-        new VideoElementNotFound({ message: "camera video element not found" }),
-      );
+    : Effect.fail(new VideoElementNotFound({ message: "camera video element not found" }));
 });
 
 export const LoadDefs = Command.define(
@@ -407,16 +452,13 @@ export const LoadDefs = Command.define(
     const response = yield* Effect.tryPromise(() => fetch("/api/gestures"));
     const body = yield* Effect.tryPromise(() => response.json());
     if (!response.ok) {
-      const message =
-        (body as { error?: string }).error ?? `HTTP ${response.status}`;
+      const message = (body as { error?: string }).error ?? `HTTP ${response.status}`;
       return yield* new DefsRequestError({ message });
     }
     const defs = yield* S.decodeUnknownEffect(S.Array(GestureDef))(body);
     return SucceededLoadDefs({ defs });
   }).pipe(
-    Effect.catch((error) =>
-      Effect.succeed(FailedLoadDefs({ message: errorMessage(error) })),
-    ),
+    Effect.catch((error) => Effect.succeed(FailedLoadDefs({ message: errorMessage(error) }))),
   ),
 );
 
@@ -437,15 +479,15 @@ export const AttachCamera = Command.define(
     });
     return CompletedAttachCamera();
   }).pipe(
-    Effect.catch((error) =>
-      Effect.succeed(FailedAttachCamera({ message: errorMessage(error) })),
-    ),
+    Effect.catch((error) => Effect.succeed(FailedAttachCamera({ message: errorMessage(error) }))),
   ),
 );
 
-const sendWireMessages = (messages: ReadonlyArray<WireMessage>) =>
+type ControlCommand = { type: string } & Record<string, unknown>;
+
+const sendControlCommands = (messages: ReadonlyArray<ControlCommand>) =>
   SocketResource.get.pipe(
-    Effect.flatMap((socket) =>
+    Effect.flatMap(({ socket }) =>
       Effect.sync(() => {
         if (socket.readyState === WebSocket.OPEN) {
           messages.forEach((message) => socket.send(JSON.stringify(message)));
@@ -458,13 +500,9 @@ const sendWireMessages = (messages: ReadonlyArray<WireMessage>) =>
 export const HideAllRings = Command.define(
   "HideAllRings",
   CompletedHideAll,
-)(
-  sendWireMessages([{ type: "hideall", id: "*" }]).pipe(
-    Effect.as(CompletedHideAll()),
-  ),
-);
+)(sendControlCommands([{ type: "hideall", id: "*" }]).pipe(Effect.as(CompletedHideAll())));
 
-const wireMessageToEcho = (message: WireMessage): Option.Option<Echo> => {
+const commandToEcho = (message: ControlCommand): Option.Option<Echo> => {
   if (message.type === "circle") {
     return Option.some(
       RingEcho({
@@ -475,11 +513,56 @@ const wireMessageToEcho = (message: WireMessage): Option.Option<Echo> => {
     );
   }
   if (message.type === "click") {
-    return Option.some(
-      ClickEcho({ x: Number(message.x), y: Number(message.y) }),
-    );
+    return Option.some(ClickEcho({ x: Number(message.x), y: Number(message.y) }));
   }
   return Option.none();
+};
+
+const boundCommand = (
+  status: InstanceStatus,
+  rule: GestureRule,
+  globals: Readonly<{ hands: { count: number }; faces: { count: number } }>,
+): Option.Option<ControlCommand> => {
+  if (rule.gesture !== status.gesture) {
+    return Option.none();
+  }
+  try {
+    const ctx = (name: string) => {
+      if (name in status.metrics) return status.metrics[name];
+      if (name in globals) return globals[name as keyof typeof globals];
+      return (status as unknown as Record<string, unknown>)[name];
+    };
+    if (!parseExpr(rule.when)(ctx)) {
+      return Option.none();
+    }
+    const command: ControlCommand = { type: rule.capability };
+    for (const [field, value] of Object.entries(rule.fields)) {
+      command[field] = typeof value === "string" ? parseExpr(value)(ctx) : value;
+    }
+    return Option.some(command);
+  } catch {
+    return Option.none();
+  }
+};
+
+const bindGestureRules = (
+  statuses: ReadonlyArray<InstanceStatus>,
+  rules: ReadonlyArray<GestureRule>,
+  capabilities: ReadonlyArray<SurfaceCapability>,
+  globals: Readonly<{ hands: { count: number }; faces: { count: number } }>,
+): ReadonlyArray<ControlCommand> => {
+  const supportedCapabilities = new Set(capabilities.map(({ type }) => type));
+  return statuses.flatMap((status) =>
+    rules.flatMap((rule) => {
+      if (!supportedCapabilities.has(rule.capability)) {
+        return [];
+      }
+      return Option.match(boundCommand(status, rule, globals), {
+        onNone: () => [],
+        onSome: (command) => [command],
+      });
+    }),
+  );
 };
 
 const formatMetricValue = (value: unknown): string => {
@@ -505,11 +588,13 @@ export const ProcessFrame = Command.define(
     lastVideoTime: S.Number,
     handTracking: TrackState,
     faceTracking: TrackState,
+    rules: S.Array(GestureRule),
+    surfaceCapabilities: S.Array(SurfaceCapability),
   },
   ProcessedFrame,
   SkippedFrame,
   FailedFrame,
-)(({ lastVideoTime, handTracking, faceTracking }) =>
+)(({ lastVideoTime, handTracking, faceTracking, rules, surfaceCapabilities }) =>
   Effect.gen(function* () {
     const { handLandmarker, faceLandmarker } = yield* LandmarkersResource.get;
     const engine = yield* EngineResource.get;
@@ -534,15 +619,11 @@ export const ProcessFrame = Command.define(
 
     const nextHandTracking = matchTracked(
       handTracking,
-      detected.hands.map(({ landmarks }) =>
-        landmarkAt(landmarks, HAND_LANDMARKS.wrist),
-      ),
+      detected.hands.map(({ landmarks }) => landmarkAt(landmarks, HAND_LANDMARKS.wrist)),
     );
     const nextFaceTracking = matchTracked(
       faceTracking,
-      detected.faces.map((landmarks) =>
-        landmarkAt(landmarks, FACE_LANDMARKS.nose_tip),
-      ),
+      detected.faces.map((landmarks) => landmarkAt(landmarks, FACE_LANDMARKS.nose_tip)),
     );
 
     const entities: Array<Entity> = [
@@ -570,8 +651,12 @@ export const ProcessFrame = Command.define(
       ),
     ];
 
-    const { statuses, messages } = yield* engine.step(entities);
-    yield* sendWireMessages(messages);
+    const { statuses } = yield* engine.step(entities);
+    const commands = bindGestureRules(statuses, rules, surfaceCapabilities, {
+      hands: { count: entities.filter((entity) => entity.type === "hand").length },
+      faces: { count: entities.filter((entity) => entity.type === "face").length },
+    });
+    yield* sendControlCommands(commands);
 
     return ProcessedFrame({
       videoTime: video.currentTime,
@@ -589,150 +674,167 @@ export const ProcessFrame = Command.define(
             key: status.key,
             gesture: status.gesture,
             state: status.state,
+            previousState: status.previousState,
             metrics: formatMetrics(status.metrics),
             maybeError: Option.fromNullishOr(status.error),
           }),
         ),
-        echoes: Array.getSomes(messages.map(wireMessageToEcho)),
+        echoes: Array.getSomes(commands.map(commandToEcho)),
       },
       handTracking: nextHandTracking,
       faceTracking: nextFaceTracking,
     });
   }).pipe(
-    Effect.catchTag("ResourceNotAvailable", () =>
-      Effect.succeed(SkippedFrame()),
-    ),
-    Effect.catch((error) =>
-      Effect.succeed(FailedFrame({ message: errorMessage(error) })),
-    ),
+    Effect.catchTag("ResourceNotAvailable", () => Effect.succeed(SkippedFrame())),
+    Effect.catch((error) => Effect.succeed(FailedFrame({ message: errorMessage(error) }))),
   ),
 );
 
 // MANAGED RESOURCE
 
-export const managedResources = ManagedResource.make<Model, Message>()(
-  (entry) => ({
-    landmarkers: entry(S.Option(S.Null), {
-      resource: LandmarkersResource,
-      modelToMaybeRequirements: (model) =>
-        M.value(model.tracker).pipe(
-          M.tag("FailedTracker", () => Option.none()),
-          M.orElse(() => Option.some(null)),
-        ),
-      acquire: () =>
-        Effect.tryPromise({
-          try: async () => {
-            const vision =
-              await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL);
-            const [handLandmarker, faceLandmarker] = await Promise.all([
-              HandLandmarker.createFromOptions(vision, {
-                baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "GPU" },
-                runningMode: "VIDEO",
-                numHands: MAX_HANDS,
-              }),
-              FaceLandmarker.createFromOptions(vision, {
-                baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate: "GPU" },
-                runningMode: "VIDEO",
-                numFaces: MAX_FACES,
-              }),
-            ]);
-            return { handLandmarker, faceLandmarker };
-          },
-          catch: (cause) =>
-            new LandmarkerLoadError({ message: errorMessage(cause) }),
-        }),
-      release: (landmarkers: Landmarkers) =>
-        Effect.sync(() => {
-          landmarkers.handLandmarker.close();
-          landmarkers.faceLandmarker.close();
-        }),
-      onAcquired: () => AcquiredLandmarkers(),
-      onAcquireError: (error) =>
-        FailedAcquireLandmarkers({ message: errorMessage(error) }),
-      onReleased: () => ReleasedLandmarkers(),
-    }),
-
-    camera: entry(S.Option(S.Null), {
-      resource: CameraResource,
-      modelToMaybeRequirements: (model) =>
-        M.value(model.tracker).pipe(
-          M.tag("StartingCamera", () => Option.some(null)),
-          M.tag("AttachingCamera", () => Option.some(null)),
-          M.tag("Tracking", () => Option.some(null)),
-          M.orElse(() => Option.none()),
-        ),
-      acquire: () =>
-        Effect.tryPromise({
-          try: () =>
-            navigator.mediaDevices.getUserMedia({
-              video: { width: STAGE_WIDTH, height: STAGE_HEIGHT },
+export const managedResources = ManagedResource.make<Model, Message>()((entry) => ({
+  landmarkers: entry(S.Option(S.Null), {
+    resource: LandmarkersResource,
+    modelToMaybeRequirements: (model) =>
+      M.value(model.tracker).pipe(
+        M.tag("FailedTracker", () => Option.none()),
+        M.orElse(() => Option.some(null)),
+      ),
+    acquire: () =>
+      Effect.tryPromise({
+        try: async () => {
+          const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL);
+          const [handLandmarker, faceLandmarker] = await Promise.all([
+            HandLandmarker.createFromOptions(vision, {
+              baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "GPU" },
+              runningMode: "VIDEO",
+              numHands: MAX_HANDS,
             }),
-          catch: (cause) =>
-            new CameraAccessError({ message: errorMessage(cause) }),
-        }),
-      release: (stream: MediaStream) =>
-        Effect.sync(() => stream.getTracks().forEach((track) => track.stop())),
-      onAcquired: () => AcquiredCamera(),
-      onAcquireError: (error) =>
-        FailedAcquireCamera({ message: errorMessage(error) }),
-      onReleased: () => ReleasedCamera(),
-    }),
-
-    engine: entry(S.Option(S.Struct({ defs: S.Array(GestureDef) })), {
-      resource: EngineResource,
-      modelToMaybeRequirements: (model) =>
-        M.value(model.defs).pipe(
-          M.tag("LoadedDefs", ({ defs }) => Option.some({ defs })),
-          M.orElse(() => Option.none()),
-        ),
-      acquire: ({ defs }) => GestureEngine.make(defs),
-      release: () => Effect.void,
-      onAcquired: () => AcquiredEngine(),
-      onAcquireError: (error) =>
-        FailedAcquireEngine({ message: errorMessage(error) }),
-      onReleased: () => ReleasedEngine(),
-    }),
-
-    socket: entry(S.Option(S.Null), {
-      resource: SocketResource,
-      modelToMaybeRequirements: (model) =>
-        M.value(model.tracker).pipe(
-          M.tag("Tracking", () => Option.some(null)),
-          M.orElse(() => Option.none()),
-        ),
-      acquire: () =>
-        Effect.callback<WebSocket, SocketConnectError>((resume) => {
-          const socket = new WebSocket(`ws://${location.host}/ws`);
-          const handleOpen = () => {
-            removeHandlers();
-            resume(Effect.succeed(socket));
-          };
-          const handleError = () => {
-            removeHandlers();
-            resume(
-              Effect.fail(
-                new SocketConnectError({
-                  message: "failed to connect to overlay bridge",
-                }),
-              ),
-            );
-          };
-          const removeHandlers = () => {
-            socket.removeEventListener("open", handleOpen);
-            socket.removeEventListener("error", handleError);
-          };
-          socket.addEventListener("open", handleOpen);
-          socket.addEventListener("error", handleError);
-          return Effect.sync(removeHandlers);
-        }),
-      release: (socket: WebSocket) => Effect.sync(() => socket.close()),
-      onAcquired: () => ConnectedSocket(),
-      onAcquireError: (error) =>
-        FailedConnectSocket({ message: errorMessage(error) }),
-      onReleased: () => DisconnectedSocket(),
-    }),
+            FaceLandmarker.createFromOptions(vision, {
+              baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate: "GPU" },
+              runningMode: "VIDEO",
+              numFaces: MAX_FACES,
+            }),
+          ]);
+          return { handLandmarker, faceLandmarker };
+        },
+        catch: (cause) => new LandmarkerLoadError({ message: errorMessage(cause) }),
+      }),
+    release: (landmarkers: Landmarkers) =>
+      Effect.sync(() => {
+        landmarkers.handLandmarker.close();
+        landmarkers.faceLandmarker.close();
+      }),
+    onAcquired: () => AcquiredLandmarkers(),
+    onAcquireError: (error) => FailedAcquireLandmarkers({ message: errorMessage(error) }),
+    onReleased: () => ReleasedLandmarkers(),
   }),
-);
+
+  camera: entry(S.Option(S.Null), {
+    resource: CameraResource,
+    modelToMaybeRequirements: (model) =>
+      M.value(model.tracker).pipe(
+        M.tag("StartingCamera", () => Option.some(null)),
+        M.tag("AttachingCamera", () => Option.some(null)),
+        M.tag("Tracking", () => Option.some(null)),
+        M.orElse(() => Option.none()),
+      ),
+    acquire: () =>
+      Effect.tryPromise({
+        try: () =>
+          navigator.mediaDevices.getUserMedia({
+            video: { width: STAGE_WIDTH, height: STAGE_HEIGHT },
+          }),
+        catch: (cause) => new CameraAccessError({ message: errorMessage(cause) }),
+      }),
+    release: (stream: MediaStream) =>
+      Effect.sync(() => stream.getTracks().forEach((track) => track.stop())),
+    onAcquired: () => AcquiredCamera(),
+    onAcquireError: (error) => FailedAcquireCamera({ message: errorMessage(error) }),
+    onReleased: () => ReleasedCamera(),
+  }),
+
+  engine: entry(S.Option(S.Struct({ defs: S.Array(GestureDef) })), {
+    resource: EngineResource,
+    modelToMaybeRequirements: (model) =>
+      M.value(model.defs).pipe(
+        M.tag("LoadedDefs", ({ defs }) => Option.some({ defs })),
+        M.orElse(() => Option.none()),
+      ),
+    acquire: ({ defs }) => GestureEngine.make(defs),
+    release: () => Effect.void,
+    onAcquired: () => AcquiredEngine(),
+    onAcquireError: (error) => FailedAcquireEngine({ message: errorMessage(error) }),
+    onReleased: () => ReleasedEngine(),
+  }),
+
+  socket: entry(S.Option(S.Null), {
+    resource: SocketResource,
+    modelToMaybeRequirements: (model) =>
+      M.value(model.tracker).pipe(
+        M.tag("Tracking", () => Option.some(null)),
+        M.orElse(() => Option.none()),
+      ),
+    acquire: () =>
+      Effect.callback<SocketConnection, SocketConnectError>((resume) => {
+        const socket = new WebSocket(`ws://${location.host}/ws`);
+        const decodeAdvertisement = S.decodeUnknownOption(CapabilityAdvertisement);
+        let isComplete = false;
+        const complete = (effect: Effect.Effect<SocketConnection, SocketConnectError>) => {
+          if (isComplete) {
+            return;
+          }
+          isComplete = true;
+          removeHandlers();
+          resume(effect);
+        };
+        const handleMessage = (event: MessageEvent) => {
+          try {
+            const maybeAdvertisement = decodeAdvertisement(JSON.parse(String(event.data)));
+            if (Option.isSome(maybeAdvertisement)) {
+              complete(
+                Effect.succeed({
+                  socket,
+                  capabilities: maybeAdvertisement.value.capabilities,
+                }),
+              );
+            }
+          } catch {}
+        };
+        const handleError = () => {
+          complete(
+            Effect.fail(
+              new SocketConnectError({
+                message: "failed to connect to overlay bridge",
+              }),
+            ),
+          );
+        };
+        const handleClose = () => {
+          complete(
+            Effect.fail(
+              new SocketConnectError({
+                message: "overlay bridge closed before advertising capabilities",
+              }),
+            ),
+          );
+        };
+        const removeHandlers = () => {
+          socket.removeEventListener("message", handleMessage);
+          socket.removeEventListener("error", handleError);
+          socket.removeEventListener("close", handleClose);
+        };
+        socket.addEventListener("message", handleMessage);
+        socket.addEventListener("error", handleError);
+        socket.addEventListener("close", handleClose);
+        return Effect.sync(removeHandlers);
+      }),
+    release: ({ socket }) => Effect.sync(() => socket.close()),
+    onAcquired: ({ capabilities }) => ConnectedSocket({ capabilities }),
+    onAcquireError: (error) => FailedConnectSocket({ message: errorMessage(error) }),
+    onReleased: () => DisconnectedSocket(),
+  }),
+}));
 
 // SUBSCRIPTION
 
@@ -807,16 +909,11 @@ const faceShapes = (entity: FrameEntity): ReadonlyArray<Canvas.Shape> => {
   const chin = toStage(landmarkAt(entity.landmarks, FACE_LANDMARKS.chin));
   return [
     Canvas.Path({
-      instructions: FaceLandmarker.FACE_LANDMARKS_FACE_OVAL.flatMap(
-        ({ start, end }) => {
-          const from = toStage(landmarkAt(entity.landmarks, start));
-          const to = toStage(landmarkAt(entity.landmarks, end));
-          return [
-            Canvas.MoveTo({ x: from.x, y: from.y }),
-            Canvas.LineTo({ x: to.x, y: to.y }),
-          ];
-        },
-      ),
+      instructions: FaceLandmarker.FACE_LANDMARKS_FACE_OVAL.flatMap(({ start, end }) => {
+        const from = toStage(landmarkAt(entity.landmarks, start));
+        const to = toStage(landmarkAt(entity.landmarks, end));
+        return [Canvas.MoveTo({ x: from.x, y: from.y }), Canvas.LineTo({ x: to.x, y: to.y })];
+      }),
       stroke: FACE_OVAL_COLOR,
       lineWidth: 2,
     }),
@@ -877,9 +974,7 @@ const trackingStatusText = (frame: Frame): string =>
       return Array.match(activeStatuses, {
         onEmpty: () => counts,
         onNonEmpty: (active) =>
-          `${counts} · ${active
-            .map((status) => `${status.gesture}:${status.state}`)
-            .join(", ")}`,
+          `${counts} · ${active.map((status) => `${status.gesture}:${status.state}`).join(", ")}`,
       });
     },
   });
@@ -915,16 +1010,14 @@ const defsLine = (defs: DefsState): Html => {
   return M.value(defs).pipe(
     M.tagsExhaustive({
       LoadingDefs: () => h.div([], ["loading gestures…"]),
-      FailedDefs: ({ message }) =>
-        h.div([h.Class("text-red-400")], [`defs failed: ${message}`]),
+      FailedDefs: ({ message }) => h.div([h.Class("text-red-400")], [`defs failed: ${message}`]),
       LoadedDefs: ({ defs }) =>
         h.div(
           [],
           [
             `gestures loaded: ${Array.match(defs, {
               onEmpty: () => "(none)",
-              onNonEmpty: (loaded) =>
-                loaded.map((def) => def.name).join(", "),
+              onNonEmpty: (loaded) => loaded.map((def) => def.name).join(", "),
             })}`,
           ],
         ),
@@ -938,43 +1031,101 @@ const statusLine = (status: GestureStatus): Html => {
     status.maybeError,
     Option.match({
       onNone: () =>
-        h.div([], [`${status.key} [${status.state}]  ${status.metrics}`]),
-      onSome: (error) =>
-        h.div([h.Class("text-red-400")], [`${status.key}: ${error}`]),
+        h.div(
+          [],
+          [`${status.key} [${status.previousState} -> ${status.state}]  ${status.metrics}`],
+        ),
+      onSome: (error) => h.div([h.Class("text-red-400")], [`${status.key}: ${error}`]),
     }),
   );
 };
 
-const socketLine = (socket: SocketState): Html => {
+const socketLine = (socket: SocketState, capabilities: ReadonlyArray<SurfaceCapability>): Html => {
   const h = html<Message>();
   return M.value(socket).pipe(
     M.tagsExhaustive({
       SocketDisconnected: () => h.div([], ["overlay bridge: disconnected"]),
-      SocketConnected: () => h.div([], ["overlay bridge: connected"]),
+      SocketConnected: () =>
+        h.div(
+          [],
+          [
+            `overlay bridge: connected (${capabilities
+              .map((capability) => capability.type)
+              .join(", ")})`,
+          ],
+        ),
       SocketFailed: ({ message }) =>
         h.div([h.Class("text-red-400")], [`overlay bridge: ${message}`]),
     }),
   );
 };
 
+const capabilityOptions = (
+  rule: GestureRule,
+  capabilities: ReadonlyArray<SurfaceCapability>,
+): ReadonlyArray<string> => {
+  const advertised = capabilities.map((capability) => capability.type);
+  if (advertised.includes(rule.capability)) {
+    return advertised;
+  }
+  return [rule.capability, ...advertised];
+};
+
+const fieldsText = (rule: GestureRule): string =>
+  Object.entries(rule.fields)
+    .map(([field, value]) => `${field}=${value}`)
+    .join(", ");
+
+const ruleLine = (rule: GestureRule, capabilities: ReadonlyArray<SurfaceCapability>): Html => {
+  const h = html<Message>();
+  return h.div(
+    [h.Class("flex items-center gap-2")],
+    [
+      h.span([h.Class("min-w-[190px]")], [`${rule.gesture}: ${rule.when}`]),
+      Ui.Select.view<Message>({
+        id: `rule-${rule.id}`,
+        value: rule.capability,
+        onChange: (capability) => SelectedRuleCapability({ ruleId: rule.id, capability }),
+        toView: (attributes) =>
+          h.select(
+            [
+              ...attributes.select,
+              h.Class("bg-[#111927] border border-[#293548] rounded px-2 py-0.5"),
+            ],
+            capabilityOptions(rule, capabilities).map((capability) =>
+              h.option([h.Value(capability)], [capability]),
+            ),
+          ),
+      }),
+      h.span([h.Class("text-slate-500")], [`${fieldsText(rule)}`]),
+    ],
+  );
+};
+
+const rulesView = (model: Model): Html => {
+  const h = html<Message>();
+  return h.div(
+    [h.Class("mt-2 space-y-1")],
+    [
+      h.div([h.Class("text-slate-400")], ["gesture rules"]),
+      ...model.rules.map((rule) => ruleLine(rule, model.surfaceCapabilities)),
+    ],
+  );
+};
+
 const panelView = (model: Model): Html => {
   const h = html<Message>();
   return h.div(
-    [
-      h.Class(
-        "w-[640px] font-mono text-xs leading-relaxed text-[#93a4b8] whitespace-pre-wrap",
-      ),
-    ],
+    [h.Class("w-[640px] font-mono text-xs leading-relaxed text-[#93a4b8] whitespace-pre-wrap")],
     [
       defsLine(model.defs),
-      socketLine(model.socket),
+      socketLine(model.socket, model.surfaceCapabilities),
+      rulesView(model),
       ...pipe(
         model.maybeFrameError,
         Option.match({
           onNone: () => [],
-          onSome: (error) => [
-            h.div([h.Class("text-red-400")], [`frame failed: ${error}`]),
-          ],
+          onSome: (error) => [h.div([h.Class("text-red-400")], [`frame failed: ${error}`])],
         }),
       ),
       ...model.frame.statuses.map(statusLine),
@@ -985,11 +1136,7 @@ const panelView = (model: Model): Html => {
 const stageView = (model: Model): Html => {
   const h = html<Message>();
   return h.div(
-    [
-      h.Class(
-        "relative w-[640px] h-[480px] rounded-xl overflow-hidden bg-black",
-      ),
-    ],
+    [h.Class("relative w-[640px] h-[480px] rounded-xl overflow-hidden bg-black")],
     [
       h.video(
         [
@@ -1033,10 +1180,7 @@ export const view = (model: Model): Document => {
             h.b([], ["r"]),
             " or ",
             h.button(
-              [
-                h.OnClick(ClickedReloadDefs()),
-                h.Class("underline cursor-pointer"),
-              ],
+              [h.OnClick(ClickedReloadDefs()), h.Class("underline cursor-pointer")],
               ["reload"],
             ),
             " to reload gesture definitions",

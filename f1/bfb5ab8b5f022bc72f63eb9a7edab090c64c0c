@@ -1,0 +1,19 @@
+src/defs/pinch.json
+  s_bba100c6e02fd8::t_125d86c7845f5f 1-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "f1bfb5ab8b5f022bc72f63eb9a7edab090c64c0c",
+  "prompts": {},
+  "sessions": {
+    "s_bba100c6e02fd8": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15d7097beffeARWhJARFBhnq0E",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

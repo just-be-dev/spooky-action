@@ -206,6 +206,7 @@ describe("update", () => {
             },
             handTracking: { tracked: [{ id: 1, anchor: { x: 0.5, y: 0.5 } }], nextId: 2 },
             faceTracking: initialTrackState,
+            pinchFilters: {},
           }),
         ),
         Story.model((model) => {

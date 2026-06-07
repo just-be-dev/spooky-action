@@ -200,6 +200,16 @@ type Frame = typeof Frame.Type;
 
 const emptyFrame: Frame = { entities: [], statuses: [], echoes: [] };
 
+const PinchFilter = S.Struct({
+  thumbTip: LandmarkPoint,
+  indexTip: LandmarkPoint,
+  worldThumbTip: LandmarkPoint,
+  worldIndexTip: LandmarkPoint,
+});
+type PinchFilter = typeof PinchFilter.Type;
+const PinchFilters = S.Record(S.String, PinchFilter);
+type PinchFilters = typeof PinchFilters.Type;
+
 export const Model = S.Struct({
   defs: DefsState,
   tracker: TrackerState,
@@ -209,6 +219,7 @@ export const Model = S.Struct({
   frame: Frame,
   handTracking: TrackState,
   faceTracking: TrackState,
+  pinchFilters: PinchFilters,
   lastVideoTime: S.Number,
   isProcessingFrame: S.Boolean,
   maybeFrameError: S.Option(S.String),
@@ -255,6 +266,7 @@ export const ProcessedFrame = m("ProcessedFrame", {
   frame: Frame,
   handTracking: TrackState,
   faceTracking: TrackState,
+  pinchFilters: PinchFilters,
 });
 export const SkippedFrame = m("SkippedFrame");
 export const FailedFrame = m("FailedFrame", { message: S.String });
@@ -332,6 +344,7 @@ export const init: Runtime.ProgramInit<Model, Message, void, never, Services> = 
     frame: emptyFrame,
     handTracking: initialTrackState,
     faceTracking: initialTrackState,
+    pinchFilters: {},
     lastVideoTime: -1,
     isProcessingFrame: false,
     maybeFrameError: Option.none(),
@@ -424,17 +437,19 @@ export const update = (model: Model, message: Message): UpdateReturn =>
               lastVideoTime: model.lastVideoTime,
               handTracking: model.handTracking,
               faceTracking: model.faceTracking,
+              pinchFilters: model.pinchFilters,
               rules: model.rules,
               controlSurfaces: model.controlSurfaces,
             }),
           ],
         ];
       },
-      ProcessedFrame: ({ videoTime, frame, handTracking, faceTracking }) => [
+      ProcessedFrame: ({ videoTime, frame, handTracking, faceTracking, pinchFilters }) => [
         evo(model, {
           frame: () => frame,
           handTracking: () => handTracking,
           faceTracking: () => faceTracking,
+          pinchFilters: () => pinchFilters,
           lastVideoTime: () => videoTime,
           isProcessingFrame: () => false,
           maybeFrameError: () => Option.none(),
@@ -635,19 +650,158 @@ const formatMetrics = (metrics: Record<string, unknown>): string =>
     .map(([name, value]) => `${name}=${formatMetricValue(value)}`)
     .join("  ");
 
+type FaceBounds = Readonly<{
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}>;
+
+const FACE_OVERLAP_PADDING = 0.035;
+const FACE_OVERLAP_FALLOFF = 0.08;
+const PINCH_JUMP_DISTANCE = 0.12;
+
+const pointDistance = (a: LandmarkPoint, b: LandmarkPoint): number =>
+  Math.hypot(a.x - b.x, a.y - b.y);
+
+const pointMid = (a: LandmarkPoint, b: LandmarkPoint): LandmarkPoint => ({
+  x: (a.x + b.x) / 2,
+  y: (a.y + b.y) / 2,
+  z: ((a.z ?? 0) + (b.z ?? 0)) / 2,
+});
+
+const blendPoint = (
+  previous: LandmarkPoint,
+  next: LandmarkPoint,
+  alpha: number,
+): LandmarkPoint => ({
+  x: previous.x + (next.x - previous.x) * alpha,
+  y: previous.y + (next.y - previous.y) * alpha,
+  z: (previous.z ?? 0) + ((next.z ?? 0) - (previous.z ?? 0)) * alpha,
+});
+
+const clamp01 = (value: number): number => Math.min(Math.max(value, 0), 1);
+
+const boundsForFace = (landmarks: ReadonlyArray<LandmarkPoint>): FaceBounds => {
+  let minX = 1;
+  let maxX = 0;
+  let minY = 1;
+  let maxY = 0;
+  for (const point of landmarks) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+  return {
+    minX: minX - FACE_OVERLAP_PADDING,
+    maxX: maxX + FACE_OVERLAP_PADDING,
+    minY: minY - FACE_OVERLAP_PADDING,
+    maxY: maxY + FACE_OVERLAP_PADDING,
+  };
+};
+
+const pointFaceOverlap = (point: LandmarkPoint, bounds: FaceBounds): number => {
+  const dx =
+    point.x < bounds.minX
+      ? bounds.minX - point.x
+      : point.x > bounds.maxX
+        ? point.x - bounds.maxX
+        : 0;
+  const dy =
+    point.y < bounds.minY
+      ? bounds.minY - point.y
+      : point.y > bounds.maxY
+        ? point.y - bounds.maxY
+        : 0;
+  return clamp01(1 - Math.hypot(dx, dy) / FACE_OVERLAP_FALLOFF);
+};
+
+const faceOverlapForPinch = (
+  thumbTip: LandmarkPoint,
+  indexTip: LandmarkPoint,
+  pinchPos: LandmarkPoint,
+  faces: ReadonlyArray<FaceBounds>,
+): number =>
+  Math.max(
+    0,
+    ...faces.flatMap((face) => [
+      pointFaceOverlap(thumbTip, face),
+      pointFaceOverlap(indexTip, face),
+      pointFaceOverlap(pinchPos, face),
+    ]),
+  );
+
+const stabilizedPinchLandmarks = (
+  previousFilters: PinchFilters,
+  handId: number,
+  landmarks: ReadonlyArray<LandmarkPoint>,
+  nullableWorldLandmarks: ReadonlyArray<LandmarkPoint> | undefined,
+  faces: ReadonlyArray<FaceBounds>,
+): Readonly<{
+  filter: PinchFilter;
+  landmarks: Array<LandmarkPoint>;
+  worldLandmarks: Array<LandmarkPoint> | undefined;
+}> => {
+  const thumbTip = landmarkAt(landmarks, HAND_LANDMARKS.thumb_tip);
+  const indexTip = landmarkAt(landmarks, HAND_LANDMARKS.index_tip);
+  const worldSource = nullableWorldLandmarks ?? landmarks;
+  const worldThumbTip = landmarkAt(worldSource, HAND_LANDMARKS.thumb_tip);
+  const worldIndexTip = landmarkAt(worldSource, HAND_LANDMARKS.index_tip);
+  const rawPos = pointMid(thumbTip, indexTip);
+  const faceOverlap = faceOverlapForPinch(thumbTip, indexTip, rawPos, faces);
+  const previous = previousFilters[String(handId)];
+  const nextLandmarks = [...landmarks];
+  const nextWorldLandmarks =
+    nullableWorldLandmarks === undefined ? undefined : [...nullableWorldLandmarks];
+
+  if (previous === undefined) {
+    return {
+      filter: { thumbTip, indexTip, worldThumbTip, worldIndexTip },
+      landmarks: nextLandmarks,
+      worldLandmarks: nextWorldLandmarks,
+    };
+  }
+
+  const previousPos = pointMid(previous.thumbTip, previous.indexTip);
+  const jump = pointDistance(previousPos, rawPos);
+  const occludedPosAlpha = jump > PINCH_JUMP_DISTANCE ? 0.06 : 0.18;
+  const alpha = occludedPosAlpha * faceOverlap + 1 * (1 - faceOverlap);
+  const filter: PinchFilter = {
+    thumbTip: blendPoint(previous.thumbTip, thumbTip, alpha),
+    indexTip: blendPoint(previous.indexTip, indexTip, alpha),
+    worldThumbTip: blendPoint(previous.worldThumbTip, worldThumbTip, alpha),
+    worldIndexTip: blendPoint(previous.worldIndexTip, worldIndexTip, alpha),
+  };
+
+  nextLandmarks[HAND_LANDMARKS.thumb_tip!] = filter.thumbTip;
+  nextLandmarks[HAND_LANDMARKS.index_tip!] = filter.indexTip;
+  if (nextWorldLandmarks !== undefined) {
+    nextWorldLandmarks[HAND_LANDMARKS.thumb_tip!] = filter.worldThumbTip;
+    nextWorldLandmarks[HAND_LANDMARKS.index_tip!] = filter.worldIndexTip;
+  }
+
+  return {
+    filter,
+    landmarks: nextLandmarks,
+    worldLandmarks: nextWorldLandmarks,
+  };
+};
+
 export const ProcessFrame = Command.define(
   "ProcessFrame",
   {
     lastVideoTime: S.Number,
     handTracking: TrackState,
     faceTracking: TrackState,
+    pinchFilters: PinchFilters,
     rules: S.Array(GestureRule),
     controlSurfaces: S.Array(ControlSurface),
   },
   ProcessedFrame,
   SkippedFrame,
   FailedFrame,
-)(({ lastVideoTime, handTracking, faceTracking, rules, controlSurfaces }) =>
+)(({ lastVideoTime, handTracking, faceTracking, pinchFilters, rules, controlSurfaces }) =>
   Effect.gen(function* () {
     const { handLandmarker, faceLandmarker } = yield* LandmarkersResource.get;
     const engine = yield* EngineResource.get;
@@ -679,18 +833,31 @@ export const ProcessFrame = Command.define(
       detected.faces.map((landmarks) => landmarkAt(landmarks, FACE_LANDMARKS.nose_tip)),
     );
 
+    const faceBounds = detected.faces.map(boundsForFace);
+    const nextPinchFilters: Record<string, PinchFilter> = {};
+
     const entities: Array<Entity> = [
       ...Array.zipWith(
         detected.hands,
         nextHandTracking.tracked,
-        ({ landmarks, worldLandmarks, nullableLabel }, trackedAnchor): Entity => ({
-          type: "hand",
-          id: trackedAnchor.id,
-          landmarks,
-          worldLandmarks,
-          names: HAND_LANDMARKS,
-          label: nullableLabel,
-        }),
+        ({ landmarks, worldLandmarks, nullableLabel }, trackedAnchor): Entity => {
+          const stabilized = stabilizedPinchLandmarks(
+            pinchFilters,
+            trackedAnchor.id,
+            landmarks,
+            worldLandmarks,
+            faceBounds,
+          );
+          nextPinchFilters[String(trackedAnchor.id)] = stabilized.filter;
+          return {
+            type: "hand",
+            id: trackedAnchor.id,
+            landmarks: stabilized.landmarks,
+            worldLandmarks: stabilized.worldLandmarks,
+            names: HAND_LANDMARKS,
+            label: nullableLabel,
+          };
+        },
       ),
       ...Array.zipWith(
         detected.faces,
@@ -736,6 +903,7 @@ export const ProcessFrame = Command.define(
       },
       handTracking: nextHandTracking,
       faceTracking: nextFaceTracking,
+      pinchFilters: nextPinchFilters,
     });
   }).pipe(
     Effect.catchTag("ResourceNotAvailable", () => Effect.succeed(SkippedFrame())),

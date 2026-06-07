@@ -1,0 +1,26 @@
+src/gesture/engine.ts
+  s_bba100c6e02fd8::t_8358f8a75db428 24,108-113,119,144,158-159,182
+  s_bba100c6e02fd8::t_9cf988f7253dcc 193,217,244,265,273-274,277-284,288
+  s_bba100c6e02fd8::t_7a2818e494d549 7-8,72,89-90,174
+src/defs/mouth-ring.json
+  s_bba100c6e02fd8::t_125d86c7845f5f 14,16
+src/gesture/engine.test.ts
+  s_bba100c6e02fd8::t_6a77beb3ae7347 5,44,46,70,73-75,77,79-80,82,84-85,87,89-90,92,94-95,97,99-100,102,104-105,107,110-117,120-121,124-125,131,133,138,146-148
+  s_bba100c6e02fd8::t_8358f8a75db428 3,8,126,165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "cdbadd2d146a0c1e89aff3fd108bf7acc88a2687",
+  "prompts": {},
+  "sessions": {
+    "s_bba100c6e02fd8": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15d7097beffeARWhJARFBhnq0E",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

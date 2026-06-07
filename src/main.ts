@@ -5,7 +5,7 @@
 // proxies /api here and /ws to the channel.
 //
 // Bun.serve stays in charge of HTTP; its callbacks are the Effect boundary
-// and run effects with runPromise.
+// and run effects with the surrounding Effect context.
 import { Glob } from "bun";
 import { Effect, Layer, Schema } from "effect";
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun";
@@ -40,6 +40,7 @@ const loadDefs = Effect.fn("loadDefs")(function* () {
 });
 
 const program = Effect.gen(function* () {
+  const context = yield* Effect.context<never>();
   const server = yield* Effect.acquireRelease(
     Effect.sync(() =>
       Bun.serve({
@@ -47,7 +48,7 @@ const program = Effect.gen(function* () {
         routes: {
           "/api/gestures": {
             GET: () =>
-              Effect.runPromise(
+              Effect.runPromiseWith(context)(
                 loadDefs().pipe(
                   Effect.map((defs) => Response.json(defs)),
                   Effect.catchTag("DefsLoadError", (err) =>

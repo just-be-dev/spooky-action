@@ -1,0 +1,21 @@
+src/gesture/expr.ts
+  s_f10cbc8c23f056::t_d213347475e961 29
+src/gesture/expr.test.ts
+  s_f10cbc8c23f056::t_d213347475e961 48,60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "e7cb2500435c1bfd5dc141e84152d1c548b8374c",
+  "prompts": {},
+  "sessions": {
+    "s_f10cbc8c23f056": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15c6bd4dbffeBXpO0zU9Bw57Ve",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

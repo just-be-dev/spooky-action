@@ -13,7 +13,9 @@
 
 import { Effect, Schema } from "effect";
 
-export type Point = { x: number; y: number };
+export type Point = { x: number; y: number; z?: number };
+
+const zOf = (point: Point): number => point.z ?? 0;
 
 export class ExprError extends Schema.TaggedErrorClass<ExprError>()(
   "ExprError",
@@ -24,8 +26,13 @@ export type Ctx = (name: string) => unknown;
 export type Expr = (ctx: Ctx) => unknown;
 
 const FUNCS: Record<string, (...args: any[]) => unknown> = {
-  dist: (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y),
-  mid: (a: Point, b: Point) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }),
+  dist: (a: Point, b: Point) =>
+    Math.hypot(a.x - b.x, a.y - b.y, zOf(a) - zOf(b)),
+  mid: (a: Point, b: Point) => ({
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+    z: (zOf(a) + zOf(b)) / 2,
+  }),
   // Angle of the segment a→b in degrees (0 = rightward, 90 = downward)
   angle: (a: Point, b: Point) =>
     (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI,
@@ -40,7 +47,7 @@ const FUNCS: Record<string, (...args: any[]) => unknown> = {
   max: Math.max,
   floor: Math.floor,
   round: Math.round,
-  point: (x: number, y: number) => ({ x, y }),
+  point: (x: number, y: number, z = 0) => ({ x, y, z }),
 };
 
 type Tok =

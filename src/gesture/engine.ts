@@ -70,6 +70,7 @@ export type Entity = {
   type: "hand" | "face";
   id: number;
   landmarks: Point[];
+  worldLandmarks?: Point[];
   names: Record<string, number>; // identifier → landmark index
   label?: string;
 };
@@ -197,7 +198,11 @@ function smoothValue(prev: unknown, next: unknown, alpha: number): unknown {
   ) {
     const np = next as Point;
     const pp = prev as Point;
-    return { x: pp.x + (np.x - pp.x) * alpha, y: pp.y + (np.y - pp.y) * alpha };
+    return {
+      x: pp.x + (np.x - pp.x) * alpha,
+      y: pp.y + (np.y - pp.y) * alpha,
+      z: (pp.z ?? 0) + ((np.z ?? 0) - (pp.z ?? 0)) * alpha,
+    };
   }
   return next;
 }
@@ -261,7 +266,12 @@ export class GestureEngine {
           if (name in metricValues) return metricValues[name];
           const idx = entity.names[name];
           if (idx !== undefined) return entity.landmarks[idx];
+          if (name.startsWith("world_")) {
+            const worldIdx = entity.names[name.slice("world_".length)];
+            if (worldIdx !== undefined) return entity.worldLandmarks?.[worldIdx];
+          }
           if (name === "lm") return (i: number) => entity.landmarks[i | 0];
+          if (name === "world_lm") return (i: number) => entity.worldLandmarks?.[i | 0];
           if (name in globals) return globals[name as keyof typeof globals];
           return undefined;
         };

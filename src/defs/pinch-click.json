@@ -2,7 +2,7 @@
   "name": "pinch-click",
   "source": "hand",
   "metrics": {
-    "pinch": "dist(thumb_tip, index_tip) / dist(wrist, middle_mcp)",
+    "pinch": "dist(world_thumb_tip, world_index_tip) / dist(world_wrist, world_middle_mcp)",
     "pos": { "expr": "mid(thumb_tip, index_tip)", "smooth": 0.4 }
   },
   "initial": "idle",

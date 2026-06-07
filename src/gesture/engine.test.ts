@@ -60,7 +60,14 @@ function handAt(ratio: number, id = 1): Entity {
   const half = (ratio * 0.2) / 2;
   landmarks[HAND_LANDMARKS.thumb_tip!] = { x: 0.5 - half, y: 0.4 };
   landmarks[HAND_LANDMARKS.index_tip!] = { x: 0.5 + half, y: 0.4 };
-  return { type: "hand", id, landmarks, names: HAND_LANDMARKS };
+  const worldLandmarks = landmarks.map((point) => ({ ...point, z: 0 }));
+  return { type: "hand", id, landmarks, worldLandmarks, names: HAND_LANDMARKS };
+}
+
+function foreshortenedHand(id = 1): Entity {
+  const hand = handAt(0.2, id);
+  hand.worldLandmarks = handAt(1.0, id).worldLandmarks;
+  return hand;
 }
 
 const makeEngine = (defs: ReadonlyArray<GestureDef>): GestureEngine =>
@@ -121,6 +128,14 @@ describe("pinch-click gesture (real def)", () => {
     expect(new Set(r.sent.map((m) => m.id))).toEqual(
       new Set(["pinch-click#1", "pinch-click#2"])
     );
+  });
+
+  test("world landmarks keep open pinch stable under screen foreshortening", () => {
+    const engine = makeEngine([pinchClick]);
+    const r = run(engine, [foreshortenedHand()]);
+    expect(r.sent).toEqual([]);
+    expect(r.statuses[0]!.state).toBe("idle");
+    expect(r.statuses[0]!.metrics.pinch).toBeCloseTo(1);
   });
 
   test("metric smoothing: pos trails the raw midpoint", () => {

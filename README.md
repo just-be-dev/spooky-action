@@ -4,7 +4,7 @@ Gesture-driven distance collaboration. Detection runs in the browser
 (MediaPipe hands + faces, multiple people, persistent entity IDs), gestures
 are **declarative JSON** evaluated by a small engine, and emitted events go
 over WebSocket to a Bun server that drives a native macOS overlay (rings +
-real clicks).
+synthetic mouse input).
 
 ```
 camera → src/ui (Foldkit) → engine.ts (defs/*.json) → WS → main.ts → control/overlay.swift → macOS
@@ -17,7 +17,7 @@ camera → src/ui (Foldkit) → engine.ts (defs/*.json) → WS → main.ts → c
 - `src/main.ts` — Bun backend: defs API + WebSocket bridge to the overlay.
 - `src/ui/` — browser UI, a Foldkit app served by Vite.
 - `src/control/` — native macOS side: the Swift overlay (rings + synthetic
-  clicks), compiled automatically on first run.
+  mouse input), compiled automatically on first run.
 
 ## Run
 
@@ -27,7 +27,7 @@ bun run server   # backend on :7900 (defs API + overlay WS bridge)
 bun run dev      # Vite dev server; open the printed URL (proxies /api and /ws to :7900)
 ```
 
-Clicking requires Accessibility permission for your terminal app (System
+Synthetic mouse input requires Accessibility permission for your terminal app (System
 Settings → Privacy & Security → Accessibility).
 
 ## Gesture definitions (`src/defs/*.json`)
@@ -96,16 +96,19 @@ every other string field evaluated as an expression. The engine adds an
 `id` (`gesture#entityId`) so multiple instances don't fight over overlay
 state. The server maps types to overlay commands:
 
-| wire message                | overlay command          | effect                       |
-| --------------------------- | ------------------------ | ---------------------------- |
-| `{type:"circle", x, y, r}`  | `circle <id> <x> <y> <r>`| show/update ring `id`        |
-| `{type:"hide"}`             | `hide <id>`              | remove ring `id`             |
-| `{type:"hideall"}`          | `hideall`                | remove all rings             |
-| `{type:"click", x, y}`      | `click <x> <y>`          | real left click + flash      |
+| wire message                     | overlay command             | effect                       |
+| -------------------------------- | --------------------------- | ---------------------------- |
+| `{type:"circle", x, y, r}`       | `circle <id> <x> <y> <r>`   | show/update ring `id`        |
+| `{type:"hide"}`                  | `hide <id>`                 | remove ring `id`             |
+| `{type:"hideall"}`               | `hideall`                   | remove all rings             |
+| `{type:"click", x, y}`           | `click <x> <y>`             | real left click + flash      |
+| `{type:"mouse-down", x, y}`      | `mouse-down <x> <y>`        | press left mouse button      |
+| `{type:"mouse-drag", x, y}`      | `mouse-drag <x> <y>`        | drag held left mouse button  |
+| `{type:"mouse-up", x, y}`        | `mouse-up <x> <y>`          | release left mouse button    |
 
-New OS-side capabilities = add a wire type in `src/main.ts` + a stdin command
-in `src/control/overlay.swift`; gestures can then emit it from data with no
-engine changes.
+New OS-side capabilities = add a capability in `src/control/surfaces/mac/overlay.ts`
+and a stdin command in `src/control/surfaces/mac/overlay.swift`; gestures can
+then emit it from data with no engine changes.
 
 ## Testing
 

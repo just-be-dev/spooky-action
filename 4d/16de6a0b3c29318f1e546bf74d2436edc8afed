@@ -1,0 +1,22 @@
+src/control/surfaces/mac/overlay.swift
+  s_61c25f8e84b14b::t_a5a047f15821e6 9-11,63,65-79,81,114,121-136
+src/control/surfaces/mac/overlay.ts
+  s_61c25f8e84b14b::t_a5a047f15821e6 76,95-103
+  s_61c25f8e84b14b::t_8fafb4eee506d7 91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "4d16de6a0b3c29318f1e546bf74d2436edc8afed",
+  "prompts": {},
+  "sessions": {
+    "s_61c25f8e84b14b": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15bb2c01bffeDmyvZjf4nh6UVY",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Justin Bennett <git@just-be.dev>"
+    }
+  }
+}

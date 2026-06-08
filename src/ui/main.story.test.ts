@@ -15,10 +15,15 @@ import {
   HideAllRings,
   LoadDefs,
   LoadedDefs,
+  MovedGraphPointer,
   type Model,
+  PressedGraphHandle,
+  PressedGraphNode,
   ProcessFrame,
   ProcessedFrame,
+  ReleasedGraphPointer,
   ReleasedEngine,
+  RemovedGraphNode,
   RingEcho,
   SkippedFrame,
   SucceededLoadDefs,
@@ -46,6 +51,53 @@ const trackingModel: Model = {
 };
 
 describe("update", () => {
+  describe("node graph", () => {
+    test("graph nodes can be dragged", () => {
+      Story.story(
+        update,
+        Story.with(initialModel),
+        Story.message(PressedGraphNode({ nodeId: "gesture:pinch", x: 100, y: 100 })),
+        Story.message(MovedGraphPointer({ x: 200, y: 240, isInside: true })),
+        Story.message(ReleasedGraphPointer({ x: 200, y: 240, isInside: true })),
+        Story.model((model) => {
+          const node = model.graphNodes.find((candidate) => candidate.id === "gesture:pinch");
+          expect(node?.x).toBe(172);
+          expect(node?.y).toBe(232);
+          expect(model.graphDrag._tag).toBe("NotDraggingGraph");
+        }),
+      );
+    });
+
+    test("graph handles create rule-backed edges", () => {
+      Story.story(
+        update,
+        Story.with(initialModel),
+        Story.message(PressedGraphHandle({ nodeId: "gesture:pinch", x: 292, y: 131 })),
+        Story.message(ReleasedGraphPointer({ x: 660, y: 230, isInside: true })),
+        Story.model((model) => {
+          expect(model.rules).toHaveLength(initialModel.rules.length + 1);
+          expect(model.graphEdges).toHaveLength(initialModel.graphEdges.length + 1);
+          expect(Option.isSome(model.maybeSelectedGraphEdgeId)).toBe(true);
+        }),
+      );
+    });
+
+    test("removing a graph node removes connected edges and rules", () => {
+      Story.story(
+        update,
+        Story.with(initialModel),
+        Story.message(RemovedGraphNode({ nodeId: "gesture:pinch" })),
+        Story.model((model) => {
+          expect(model.graphNodes.some((node) => node.id === "gesture:pinch")).toBe(false);
+          expect(model.graphEdges.some((edge) => edge.sourceNodeId === "gesture:pinch")).toBe(
+            false,
+          );
+          expect(model.rules.some((rule) => rule.gesture === "pinch")).toBe(false);
+        }),
+      );
+    });
+  });
+
   describe("defs lifecycle", () => {
     test("SucceededLoadDefs stores the loaded defs", () => {
       Story.story(

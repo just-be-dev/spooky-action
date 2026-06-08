@@ -24,6 +24,62 @@ import {
   mirror,
 } from "./tracking";
 
+import {
+  ClosedContextMenu,
+  ConnectingGraphEdge,
+  type ContextMenuState,
+  DisconnectedGraphEdge,
+  DraggingGraphNode,
+  DraggingPaletteNode,
+  EdgeContextMenu,
+  GRAPH_NODE_HEIGHT,
+  GRAPH_NODE_WIDTH,
+  GRAPH_SURFACE_HEIGHT,
+  GRAPH_SURFACE_WIDTH,
+  GraphDragState,
+  GraphEdge,
+  GraphNode,
+  type GraphNodeKind,
+  MovedGraphPointer,
+  NodeContextMenu,
+  NotDraggingGraph,
+  OpenedEdgeContextMenu,
+  OpenedNodeContextMenu,
+  PressedGraphEdge,
+  PressedGraphHandle,
+  PressedGraphNode,
+  PressedPaletteNode,
+  ReleasedGraphPointer,
+  RemovedGraphNode,
+  TrackGraphSurface,
+  edgePath,
+  graphCapabilityNodeId,
+  graphGestureNodeId,
+  graphNodeAtPoint,
+  graphNodeById,
+  nextGraphNodeId,
+  sourcePort,
+  targetPort,
+} from "./graph";
+
+export {
+  ClosedContextMenu,
+  ConnectingGraphEdge,
+  DisconnectedGraphEdge,
+  DraggingGraphNode,
+  DraggingPaletteNode,
+  MovedGraphPointer,
+  NotDraggingGraph,
+  OpenedEdgeContextMenu,
+  OpenedNodeContextMenu,
+  PressedGraphEdge,
+  PressedGraphHandle,
+  PressedGraphNode,
+  PressedPaletteNode,
+  ReleasedGraphPointer,
+  RemovedGraphNode,
+} from "./graph";
+
 const STAGE_WIDTH = 640;
 const STAGE_HEIGHT = 480;
 const MAX_HANDS = 4;
@@ -130,11 +186,27 @@ const defaultGestureRules: ReadonlyArray<GestureRule> = [
     fields: { id: "key", x: "pos.x", y: "pos.y", r: "lerp(pinch, 0.35, 0.9, 8, 64)" },
   },
   {
-    id: "pinch.active.click",
+    id: "pinch.active.mouse-down",
     gesture: "pinch",
     when: "state == 'active' && previousState != 'active' && hands.count == 1",
     surface: "mac",
-    capability: "click",
+    capability: "mouse-down",
+    fields: { x: "pos.x", y: "pos.y" },
+  },
+  {
+    id: "pinch.active.mouse-drag",
+    gesture: "pinch",
+    when: "state == 'active' && hands.count == 1",
+    surface: "mac",
+    capability: "mouse-drag",
+    fields: { x: "pos.x", y: "pos.y" },
+  },
+  {
+    id: "pinch.released.mouse-up",
+    gesture: "pinch",
+    when: "previousState == 'active' && state != 'active'",
+    surface: "mac",
+    capability: "mouse-up",
     fields: { x: "pos.x", y: "pos.y" },
   },
   {
@@ -162,6 +234,44 @@ const defaultGestureRules: ReadonlyArray<GestureRule> = [
     fields: { id: "key" },
   },
 ];
+
+const initialGraphNodes = (rules: ReadonlyArray<GestureRule>): ReadonlyArray<GraphNode> => {
+  const gestures = globalThis.Array.from(new Set(rules.map((rule) => rule.gesture)));
+  const capabilities = globalThis.Array.from(
+    new Set(rules.map((rule) => `${rule.surface}:${rule.capability}`)),
+  );
+  return [
+    ...gestures.map((gesture, index) => ({
+      id: graphGestureNodeId(gesture),
+      kind: "Gesture" as const,
+      label: gesture,
+      x: 72,
+      y: 92 + index * 132,
+      maybeSurface: Option.none(),
+      maybeCapability: Option.none(),
+    })),
+    ...capabilities.map((capability, index) => {
+      const [surface, type] = capability.split(":");
+      return {
+        id: graphCapabilityNodeId(surface ?? "surface", type ?? "capability"),
+        kind: "SurfaceCapability" as const,
+        label: `${surface ?? "surface"} / ${type ?? "capability"}`,
+        x: 650,
+        y: 92 + index * 132,
+        maybeSurface: Option.some(surface ?? "surface"),
+        maybeCapability: Option.some(type ?? "capability"),
+      };
+    }),
+  ];
+};
+
+const initialGraphEdges = (rules: ReadonlyArray<GestureRule>): ReadonlyArray<GraphEdge> =>
+  rules.map((rule) => ({
+    id: `edge:${rule.id}`,
+    sourceNodeId: graphGestureNodeId(rule.gesture),
+    targetNodeId: graphCapabilityNodeId(rule.surface, rule.capability),
+    ruleId: rule.id,
+  }));
 
 const FrameEntity = S.Struct({
   kind: S.Literals(["hand", "face"]),
@@ -206,6 +316,12 @@ export const Model = S.Struct({
   socket: SocketState,
   controlSurfaces: S.Array(ControlSurface),
   rules: S.Array(GestureRule),
+  maybeSelectedRuleId: S.Option(S.String),
+  graphNodes: S.Array(GraphNode),
+  graphEdges: S.Array(GraphEdge),
+  maybeSelectedGraphEdgeId: S.Option(S.String),
+  graphDrag: GraphDragState,
+  maybeContextMenu: S.Option(S.Union([NodeContextMenu, EdgeContextMenu])),
   frame: Frame,
   handTracking: TrackState,
   faceTracking: TrackState,
@@ -267,7 +383,6 @@ export const SelectedRuleSurface = m("SelectedRuleSurface", {
   ruleId: S.String,
   surface: S.String,
 });
-
 export const Message = S.Union([
   AcquiredLandmarkers,
   FailedAcquireLandmarkers,
@@ -294,6 +409,17 @@ export const Message = S.Union([
   CompletedHideAll,
   SelectedRuleCapability,
   SelectedRuleSurface,
+  PressedPaletteNode,
+  PressedGraphNode,
+  RemovedGraphNode,
+  PressedGraphHandle,
+  PressedGraphEdge,
+  MovedGraphPointer,
+  ReleasedGraphPointer,
+  DisconnectedGraphEdge,
+  OpenedNodeContextMenu,
+  OpenedEdgeContextMenu,
+  ClosedContextMenu,
 ]);
 export type Message = typeof Message.Type;
 
@@ -329,6 +455,20 @@ export const init: Runtime.ProgramInit<Model, Message, void, never, Services> = 
     socket: SocketDisconnected(),
     controlSurfaces: [],
     rules: defaultGestureRules,
+    maybeSelectedRuleId: pipe(
+      defaultGestureRules,
+      Array.head,
+      Option.map((rule) => rule.id),
+    ),
+    graphNodes: initialGraphNodes(defaultGestureRules),
+    graphEdges: initialGraphEdges(defaultGestureRules),
+    maybeSelectedGraphEdgeId: pipe(
+      defaultGestureRules,
+      Array.head,
+      Option.map((rule) => `edge:${rule.id}`),
+    ),
+    graphDrag: NotDraggingGraph(),
+    maybeContextMenu: Option.none(),
     frame: emptyFrame,
     handTracking: initialTrackState,
     faceTracking: initialTrackState,
@@ -356,6 +496,161 @@ const firstCapabilityForSurface = (
 ): Option.Option<string> => {
   const capability = capabilitiesForSurface(surfaces, surfaceId)[0];
   return capability === undefined ? Option.none() : Option.some(capability.type);
+};
+
+const nextRuleId = (
+  rules: ReadonlyArray<GestureRule>,
+  gesture: string,
+  surface: string,
+  capability: string,
+): string => {
+  const baseId = `${gesture}.${surface}.${capability}`;
+  if (!rules.some((rule) => rule.id === baseId)) {
+    return baseId;
+  }
+  let index = 2;
+  while (rules.some((rule) => rule.id === `${baseId}.${index}`)) {
+    index += 1;
+  }
+  return `${baseId}.${index}`;
+};
+
+const graphNodeFromPaletteDrag = (
+  model: Model,
+  drag: typeof DraggingPaletteNode.Type,
+): GraphNode => {
+  const baseId = M.value(drag.kind).pipe(
+    M.when("Gesture", () => graphGestureNodeId(drag.label)),
+    M.when("SurfaceCapability", () =>
+      pipe(
+        Option.all({ surface: drag.maybeSurface, capability: drag.maybeCapability }),
+        Option.match({
+          onNone: () => `capability:${drag.label}`,
+          onSome: ({ surface, capability }) => graphCapabilityNodeId(surface, capability),
+        }),
+      ),
+    ),
+    M.exhaustive,
+  );
+  return {
+    id: nextGraphNodeId(model.graphNodes, baseId),
+    kind: drag.kind,
+    label: drag.label,
+    x: Math.max(0, Math.min(GRAPH_SURFACE_WIDTH - GRAPH_NODE_WIDTH, drag.x - GRAPH_NODE_WIDTH / 2)),
+    y: Math.max(
+      0,
+      Math.min(GRAPH_SURFACE_HEIGHT - GRAPH_NODE_HEIGHT, drag.y - GRAPH_NODE_HEIGHT / 2),
+    ),
+    maybeSurface: drag.maybeSurface,
+    maybeCapability: drag.maybeCapability,
+  };
+};
+
+const connectGraphNodes = (model: Model, sourceNodeId: string, targetNode: GraphNode): Model => {
+  const maybeSource = graphNodeById(model.graphNodes, sourceNodeId);
+  if (Option.isNone(maybeSource)) {
+    return evo(model, { graphDrag: () => NotDraggingGraph() });
+  }
+  const source = maybeSource.value;
+  const maybeTarget = Option.all({
+    surface: targetNode.maybeSurface,
+    capability: targetNode.maybeCapability,
+  });
+  if (
+    source.kind !== "Gesture" ||
+    targetNode.kind !== "SurfaceCapability" ||
+    Option.isNone(maybeTarget)
+  ) {
+    return evo(model, { graphDrag: () => NotDraggingGraph() });
+  }
+  const { surface, capability } = maybeTarget.value;
+  const ruleId = nextRuleId(model.rules, source.label, surface, capability);
+  const edgeId = `edge:${ruleId}`;
+  const rule: GestureRule = {
+    id: ruleId,
+    gesture: source.label,
+    when: "state == 'active' && previousState != 'active'",
+    surface,
+    capability,
+    fields: {},
+  };
+  return evo(model, {
+    rules: () => [...model.rules, rule],
+    graphEdges: () => [
+      ...model.graphEdges,
+      { id: edgeId, sourceNodeId: source.id, targetNodeId: targetNode.id, ruleId },
+    ],
+    maybeSelectedRuleId: () => Option.some(ruleId),
+    maybeSelectedGraphEdgeId: () => Option.some(edgeId),
+    graphDrag: () => NotDraggingGraph(),
+  });
+};
+
+const removeGraphEdge = (model: Model, edgeId: string): Model => {
+  const maybeEdge = Option.fromNullishOr(model.graphEdges.find((edge) => edge.id === edgeId));
+  if (Option.isNone(maybeEdge)) {
+    return model;
+  }
+  const edge = maybeEdge.value;
+  return evo(model, {
+    rules: () => model.rules.filter((rule) => rule.id !== edge.ruleId),
+    graphEdges: () => model.graphEdges.filter((candidate) => candidate.id !== edgeId),
+    maybeSelectedRuleId: () => Option.none(),
+    maybeSelectedGraphEdgeId: () => Option.none(),
+  });
+};
+
+const removeGraphNode = (model: Model, nodeId: string): Model => {
+  const connectedEdges = model.graphEdges.filter(
+    (edge) => edge.sourceNodeId === nodeId || edge.targetNodeId === nodeId,
+  );
+  const removedRuleIds = new Set(connectedEdges.map((edge) => edge.ruleId));
+  const removedEdgeIds = new Set(connectedEdges.map((edge) => edge.id));
+  return evo(model, {
+    graphNodes: () => model.graphNodes.filter((node) => node.id !== nodeId),
+    graphEdges: () => model.graphEdges.filter((edge) => !removedEdgeIds.has(edge.id)),
+    rules: () => model.rules.filter((rule) => !removedRuleIds.has(rule.id)),
+    maybeSelectedRuleId: () =>
+      pipe(
+        model.maybeSelectedRuleId,
+        Option.filter((ruleId) => !removedRuleIds.has(ruleId)),
+      ),
+    maybeSelectedGraphEdgeId: () =>
+      pipe(
+        model.maybeSelectedGraphEdgeId,
+        Option.filter((edgeId) => !removedEdgeIds.has(edgeId)),
+      ),
+    graphDrag: () => NotDraggingGraph(),
+  });
+};
+
+const retargetGraphEdgeForRule = (
+  model: Model,
+  ruleId: string,
+  surface: string,
+  capability: string,
+): Model => {
+  const targetNodeId = graphCapabilityNodeId(surface, capability);
+  const hasTargetNode = model.graphNodes.some((node) => node.id === targetNodeId);
+  const targetNode: GraphNode = {
+    id: targetNodeId,
+    kind: "SurfaceCapability",
+    label: `${surface} / ${capability}`,
+    x: 650,
+    y: 92 + model.graphNodes.filter((node) => node.kind === "SurfaceCapability").length * 132,
+    maybeSurface: Option.some(surface),
+    maybeCapability: Option.some(capability),
+  };
+  return evo(model, {
+    graphNodes: () => (hasTargetNode ? model.graphNodes : [...model.graphNodes, targetNode]),
+    graphEdges: () =>
+      model.graphEdges.map((edge) => {
+        if (edge.ruleId !== ruleId) {
+          return edge;
+        }
+        return { ...edge, targetNodeId };
+      }),
+  });
 };
 
 export const update = (model: Model, message: Message): UpdateReturn =>
@@ -451,8 +746,10 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       ],
 
       CompletedHideAll: () => [model, []],
-      SelectedRuleCapability: ({ ruleId, capability }) => [
-        evo(model, {
+      SelectedRuleCapability: ({ ruleId, capability }) => {
+        const maybeRule = Option.fromNullishOr(model.rules.find((rule) => rule.id === ruleId));
+        const updated = evo(model, {
+          maybeSelectedRuleId: () => Option.some(ruleId),
           rules: () =>
             model.rules.map((rule) => {
               if (rule.id !== ruleId) {
@@ -460,28 +757,190 @@ export const update = (model: Model, message: Message): UpdateReturn =>
               }
               return { ...rule, capability };
             }),
-        }),
-        [],
-      ],
-      SelectedRuleSurface: ({ ruleId, surface }) => [
-        evo(model, {
+        });
+        return [
+          pipe(
+            maybeRule,
+            Option.match({
+              onNone: () => updated,
+              onSome: (rule) => retargetGraphEdgeForRule(updated, ruleId, rule.surface, capability),
+            }),
+          ),
+          [],
+        ];
+      },
+      SelectedRuleSurface: ({ ruleId, surface }) => {
+        const maybeRule = Option.fromNullishOr(model.rules.find((rule) => rule.id === ruleId));
+        if (Option.isNone(maybeRule)) {
+          return [model, []];
+        }
+        const capability = pipe(
+          firstCapabilityForSurface(model.controlSurfaces, surface),
+          Option.getOrElse(() => maybeRule.value.capability),
+        );
+        const updated = evo(model, {
+          maybeSelectedRuleId: () => Option.some(ruleId),
           rules: () =>
             model.rules.map((rule) => {
               if (rule.id !== ruleId) {
                 return rule;
               }
-              return {
-                ...rule,
-                surface,
-                capability: pipe(
-                  firstCapabilityForSurface(model.controlSurfaces, surface),
-                  Option.getOrElse(() => rule.capability),
-                ),
-              };
+              return { ...rule, surface, capability };
+            }),
+        });
+        return [retargetGraphEdgeForRule(updated, ruleId, surface, capability), []];
+      },
+      PressedPaletteNode: ({ kind, label, maybeSurface, maybeCapability, x, y }) => [
+        evo(model, {
+          graphDrag: () =>
+            DraggingPaletteNode({
+              kind,
+              label,
+              maybeSurface,
+              maybeCapability,
+              x,
+              y,
+              isInside: false,
             }),
         }),
         [],
       ],
+      PressedGraphNode: ({ nodeId, x, y }) => [
+        pipe(
+          graphNodeById(model.graphNodes, nodeId),
+          Option.match({
+            onNone: () => model,
+            onSome: (node) =>
+              evo(model, {
+                graphDrag: () =>
+                  DraggingGraphNode({
+                    nodeId,
+                    offsetX: x - node.x,
+                    offsetY: y - node.y,
+                  }),
+              }),
+          }),
+        ),
+        [],
+      ],
+      RemovedGraphNode: ({ nodeId }) => [
+        evo(removeGraphNode(model, nodeId), { maybeContextMenu: () => Option.none() }),
+        [],
+      ],
+      PressedGraphHandle: ({ nodeId, x, y }) => [
+        pipe(
+          graphNodeById(model.graphNodes, nodeId),
+          Option.match({
+            onNone: () => model,
+            onSome: (node) => {
+              if (node.kind !== "Gesture") {
+                return model;
+              }
+              return evo(model, {
+                graphDrag: () =>
+                  ConnectingGraphEdge({
+                    sourceNodeId: nodeId,
+                    x,
+                    y,
+                    isInside: true,
+                  }),
+              });
+            },
+          }),
+        ),
+        [],
+      ],
+      PressedGraphEdge: ({ edgeId }) => [
+        pipe(
+          Option.fromNullishOr(model.graphEdges.find((edge) => edge.id === edgeId)),
+          Option.match({
+            onNone: () => model,
+            onSome: (edge) =>
+              evo(model, {
+                maybeSelectedGraphEdgeId: () => Option.some(edge.id),
+                maybeSelectedRuleId: () => Option.some(edge.ruleId),
+              }),
+          }),
+        ),
+        [],
+      ],
+      MovedGraphPointer: ({ x, y, isInside }) => [
+        M.value(model.graphDrag).pipe(
+          M.tagsExhaustive({
+            NotDraggingGraph: () => model,
+            DraggingGraphNode: ({ nodeId, offsetX, offsetY }) =>
+              evo(model, {
+                graphNodes: () =>
+                  model.graphNodes.map((node) => {
+                    if (node.id !== nodeId) {
+                      return node;
+                    }
+                    return {
+                      ...node,
+                      x: Math.max(0, Math.min(GRAPH_SURFACE_WIDTH - GRAPH_NODE_WIDTH, x - offsetX)),
+                      y: Math.max(
+                        0,
+                        Math.min(GRAPH_SURFACE_HEIGHT - GRAPH_NODE_HEIGHT, y - offsetY),
+                      ),
+                    };
+                  }),
+              }),
+            DraggingPaletteNode: (drag) =>
+              evo(model, {
+                graphDrag: () => DraggingPaletteNode({ ...drag, x, y, isInside }),
+              }),
+            ConnectingGraphEdge: (drag) =>
+              evo(model, {
+                graphDrag: () => ConnectingGraphEdge({ ...drag, x, y, isInside }),
+              }),
+          }),
+        ),
+        [],
+      ],
+      ReleasedGraphPointer: ({ x, y, isInside }) => [
+        M.value(model.graphDrag).pipe(
+          M.tagsExhaustive({
+            NotDraggingGraph: () => model,
+            DraggingGraphNode: () => evo(model, { graphDrag: () => NotDraggingGraph() }),
+            DraggingPaletteNode: (drag) => {
+              if (!isInside) {
+                return evo(model, { graphDrag: () => NotDraggingGraph() });
+              }
+              const dropped = graphNodeFromPaletteDrag(model, { ...drag, x, y, isInside });
+              return evo(model, {
+                graphNodes: () => [...model.graphNodes, dropped],
+                graphDrag: () => NotDraggingGraph(),
+              });
+            },
+            ConnectingGraphEdge: (drag) => {
+              if (!isInside) {
+                return evo(model, { graphDrag: () => NotDraggingGraph() });
+              }
+              return pipe(
+                graphNodeAtPoint(model.graphNodes, { x, y }),
+                Option.match({
+                  onNone: () => evo(model, { graphDrag: () => NotDraggingGraph() }),
+                  onSome: (targetNode) => connectGraphNodes(model, drag.sourceNodeId, targetNode),
+                }),
+              );
+            },
+          }),
+        ),
+        [],
+      ],
+      DisconnectedGraphEdge: ({ edgeId }) => [
+        evo(removeGraphEdge(model, edgeId), { maybeContextMenu: () => Option.none() }),
+        [],
+      ],
+      OpenedNodeContextMenu: ({ nodeId, x, y }) => [
+        evo(model, { maybeContextMenu: () => Option.some(NodeContextMenu({ nodeId, x, y })) }),
+        [],
+      ],
+      OpenedEdgeContextMenu: ({ edgeId, x, y }) => [
+        evo(model, { maybeContextMenu: () => Option.some(EdgeContextMenu({ edgeId, x, y })) }),
+        [],
+      ],
+      ClosedContextMenu: () => [evo(model, { maybeContextMenu: () => Option.none() }), []],
     }),
   );
 
@@ -1036,25 +1495,25 @@ const statusView = (model: Model): Html => {
   const h = html<Message>();
   const text = M.value(model.tracker).pipe(
     M.tagsExhaustive({
-      LoadingModels: () => "Loading models…",
-      StartingCamera: () => "Requesting camera…",
-      AttachingCamera: () => "Starting video…",
+      LoadingModels: () => "loading models…",
+      StartingCamera: () => "requesting camera…",
+      AttachingCamera: () => "starting video…",
       Tracking: () => trackingStatusText(model.frame),
-      FailedTracker: ({ message }) => `Error: ${message}`,
+      FailedTracker: ({ message }) => `error: ${message}`,
     }),
   );
   const isActive = model.frame.statuses.some(
     (status) => status.state !== "idle" && Option.isNone(status.maybeError),
   );
   return h.div(
+    [h.Class("flex items-center gap-2 text-xs")],
     [
-      h.Class(
-        isActive
-          ? "px-3.5 py-1.5 rounded-full text-sm bg-green-900"
-          : "px-3.5 py-1.5 rounded-full text-sm bg-[#1c2633]",
+      h.span(
+        [h.Class(`size-1.5 shrink-0 rounded-full ${isActive ? "bg-green-400" : "bg-slate-700"}`)],
+        [],
       ),
+      h.span([h.Class(isActive ? "text-green-300" : "text-slate-500")], [text]),
     ],
-    [text],
   );
 };
 
@@ -1147,66 +1606,540 @@ const fieldsText = (rule: GestureRule): string =>
     .map(([field, value]) => `${field}=${value}`)
     .join(", ");
 
-const ruleLine = (rule: GestureRule, surfaces: ReadonlyArray<ControlSurface>): Html => {
+const uniqueStrings = (values: ReadonlyArray<string>): ReadonlyArray<string> =>
+  globalThis.Array.from(new Set(values));
+
+type SurfaceNode = Readonly<{
+  id: string;
+  label: string;
+  capabilities: ReadonlyArray<string>;
+}>;
+
+const gestureNodeNames = (model: Model): ReadonlyArray<string> => {
+  const loaded = M.value(model.defs).pipe(
+    M.tagsExhaustive({
+      LoadingDefs: () => [],
+      FailedDefs: () => [],
+      LoadedDefs: ({ defs }) => defs.map((def) => def.name),
+    }),
+  );
+  return uniqueStrings([...loaded, ...model.rules.map((rule) => rule.gesture)]);
+};
+
+const surfaceNodes = (model: Model): ReadonlyArray<SurfaceNode> => {
+  const advertised = model.controlSurfaces.map((surface) => ({
+    id: surface.id,
+    label: surface.label,
+    capabilities: surface.capabilities.map((capability) => capability.type),
+  }));
+  const fallback = uniqueStrings(model.rules.map((rule) => rule.surface))
+    .filter((surface) => !advertised.some((node) => node.id === surface))
+    .map((surface) => ({
+      id: surface,
+      label: surface,
+      capabilities: uniqueStrings(
+        model.rules.filter((rule) => rule.surface === surface).map((rule) => rule.capability),
+      ),
+    }));
+  return [...advertised, ...fallback];
+};
+
+const capabilityNodeNames = (model: Model): ReadonlyArray<string> =>
+  uniqueStrings([
+    ...model.controlSurfaces.flatMap((surface) =>
+      surface.capabilities.map((capability) => capability.type),
+    ),
+    ...model.rules.map((rule) => rule.capability),
+  ]);
+
+type PaletteNode = Readonly<{
+  kind: GraphNodeKind;
+  label: string;
+  maybeSurface: Option.Option<string>;
+  maybeCapability: Option.Option<string>;
+}>;
+
+const palettePointerDown = (node: PaletteNode) =>
+  html<Message>().OnPointerDown(
+    (_pointerType, button, _screenX, _screenY, _timeStamp, clientX, clientY) => {
+      if (button !== 0) {
+        return Option.none();
+      }
+      return Option.some(
+        PressedPaletteNode({
+          kind: node.kind,
+          label: node.label,
+          maybeSurface: node.maybeSurface,
+          maybeCapability: node.maybeCapability,
+          x: clientX,
+          y: clientY,
+        }),
+      );
+    },
+  );
+
+const paletteItemView = (key: string, node: PaletteNode, dotColor: string): Html => {
   const h = html<Message>();
-  return h.div(
-    [h.Class("flex items-center gap-2")],
+  return h.keyed("li")(
+    key,
     [
-      h.span([h.Class("min-w-[190px]")], [`${rule.gesture}: ${rule.when}`]),
-      Ui.Select.view<Message>({
-        id: `rule-${rule.id}-surface`,
-        value: rule.surface,
-        onChange: (surface) => SelectedRuleSurface({ ruleId: rule.id, surface }),
-        toView: (attributes) =>
-          h.select(
-            [
-              ...attributes.select,
-              h.Class("bg-[#111927] border border-[#293548] rounded px-2 py-0.5"),
-            ],
-            surfaceOptions(rule, surfaces).map((surface) =>
-              h.option([h.Value(surface)], [surface]),
-            ),
-          ),
-      }),
-      Ui.Select.view<Message>({
-        id: `rule-${rule.id}-capability`,
-        value: rule.capability,
-        onChange: (capability) => SelectedRuleCapability({ ruleId: rule.id, capability }),
-        toView: (attributes) =>
-          h.select(
-            [
-              ...attributes.select,
-              h.Class("bg-[#111927] border border-[#293548] rounded px-2 py-0.5"),
-            ],
-            capabilityOptions(rule, surfaces).map((capability) =>
-              h.option([h.Value(capability)], [capability]),
-            ),
-          ),
-      }),
-      h.span([h.Class("text-slate-500")], [`${fieldsText(rule)}`]),
+      palettePointerDown(node),
+      h.Class(
+        "flex cursor-grab select-none items-center gap-2 rounded px-2 py-1.5 text-xs text-slate-400 hover:text-slate-200 active:cursor-grabbing",
+      ),
+    ],
+    [h.span([h.Class(`size-1.5 shrink-0 rounded-full ${dotColor}`)], []), node.label],
+  );
+};
+
+const paletteSectionView = (
+  title: string,
+  items: ReadonlyArray<PaletteNode>,
+  dotColor: string,
+): Html => {
+  const h = html<Message>();
+  return h.section(
+    [h.Class("space-y-1")],
+    [
+      h.div(
+        [h.Class("mb-1.5 px-2 text-[10px] font-medium uppercase tracking-widest text-slate-600")],
+        [title],
+      ),
+      h.ul(
+        [h.Class("space-y-0.5")],
+        Array.match(items, {
+          onEmpty: () => [
+            h.li([h.Class("px-2 py-1.5 text-xs text-slate-700")], ["—"]),
+          ],
+          onNonEmpty: (nodes) =>
+            nodes.map((item) => paletteItemView(`${title}:${item.label}`, item, dotColor)),
+        }),
+      ),
     ],
   );
 };
 
-const rulesView = (model: Model): Html => {
+const gesturePaletteNodes = (model: Model): ReadonlyArray<PaletteNode> =>
+  gestureNodeNames(model).map((gesture) => ({
+    kind: "Gesture" as const,
+    label: gesture,
+    maybeSurface: Option.none(),
+    maybeCapability: Option.none(),
+  }));
+
+const surfaceCapabilityPaletteNodes = (model: Model): ReadonlyArray<PaletteNode> =>
+  surfaceNodes(model).flatMap((surface) =>
+    surface.capabilities.map((capability) => ({
+      kind: "SurfaceCapability" as const,
+      label: `${surface.id} / ${capability}`,
+      maybeSurface: Option.some(surface.id),
+      maybeCapability: Option.some(capability),
+    })),
+  );
+
+const capabilityPaletteNodes = (model: Model): ReadonlyArray<PaletteNode> =>
+  capabilityNodeNames(model).flatMap((capability) => {
+    const maybeSurface = Option.fromNullishOr(
+      surfaceNodes(model).find((surface) => surface.capabilities.includes(capability)),
+    );
+    return pipe(
+      maybeSurface,
+      Option.match({
+        onNone: () => [],
+        onSome: (surface) => [
+          {
+            kind: "SurfaceCapability" as const,
+            label: capability,
+            maybeSurface: Option.some(surface.id),
+            maybeCapability: Option.some(capability),
+          },
+        ],
+      }),
+    );
+  });
+
+const nodePaletteView = (model: Model): Html => {
+  const h = html<Message>();
+  return h.aside(
+    [h.Class("w-full xl:w-48 shrink-0 space-y-5 pt-1")],
+    [
+      paletteSectionView("Gestures", gesturePaletteNodes(model), "bg-sky-400/80"),
+      paletteSectionView("Surfaces", surfaceCapabilityPaletteNodes(model), "bg-violet-400/80"),
+      paletteSectionView("Capabilities", capabilityPaletteNodes(model), "bg-emerald-400/80"),
+    ],
+  );
+};
+
+const activeStateForGesture = (model: Model, gesture: string): Option.Option<string> => {
+  const status = model.frame.statuses.find(
+    (candidate) =>
+      candidate.gesture === gesture &&
+      candidate.state !== "idle" &&
+      Option.isNone(candidate.maybeError),
+  );
+  if (status === undefined) {
+    return Option.none();
+  }
+  return Option.some(status.state);
+};
+
+const selectedRule = (model: Model): Option.Option<GestureRule> =>
+  pipe(
+    model.maybeSelectedRuleId,
+    Option.flatMap((ruleId) =>
+      Option.fromNullishOr(model.rules.find((rule) => rule.id === ruleId)),
+    ),
+  );
+
+const selectedEdge = (model: Model): Option.Option<GraphEdge> =>
+  pipe(
+    model.maybeSelectedGraphEdgeId,
+    Option.flatMap((edgeId) =>
+      Option.fromNullishOr(model.graphEdges.find((edge) => edge.id === edgeId)),
+    ),
+  );
+
+const graphNodeDetail = (model: Model, node: GraphNode): string => {
+  if (node.kind === "Gesture") {
+    return pipe(
+      activeStateForGesture(model, node.label),
+      Option.match({
+        onNone: () => "idle",
+        onSome: (state) => state,
+      }),
+    );
+  }
+  return pipe(
+    Option.all({ surface: node.maybeSurface, capability: node.maybeCapability }),
+    Option.match({
+      onNone: () => "surface capability",
+      onSome: ({ surface, capability }) => `${surface}.${capability}`,
+    }),
+  );
+};
+
+const graphNodeClass = (node: GraphNode): string => {
+  if (node.kind === "Gesture") {
+    return "border border-sky-900/50 bg-[#0a1828]";
+  }
+  return "border border-violet-900/50 bg-[#0d0e1e]";
+};
+
+const graphNodeStyle = (node: GraphNode): Record<string, string> => ({
+  left: `${node.x}px`,
+  top: `${node.y}px`,
+  width: `${GRAPH_NODE_WIDTH}px`,
+  height: `${GRAPH_NODE_HEIGHT}px`,
+});
+
+const edgeView = (model: Model, edge: GraphEdge): Html => {
+  const h = html<Message>();
+  const maybeSource = graphNodeById(model.graphNodes, edge.sourceNodeId);
+  const maybeTarget = graphNodeById(model.graphNodes, edge.targetNodeId);
+  if (Option.isNone(maybeSource) || Option.isNone(maybeTarget)) {
+    return null;
+  }
+  const source = maybeSource.value;
+  const target = maybeTarget.value;
+  const isSelected = pipe(
+    model.maybeSelectedGraphEdgeId,
+    Option.exists((edgeId) => edgeId === edge.id),
+  );
+  const stroke = isSelected ? "#facc15" : "#38bdf8";
+  return h.g(
+    [],
+    [
+      h.path(
+        [
+          h.D(edgePath(sourcePort(source), targetPort(target))),
+          h.Stroke("transparent"),
+          h.StrokeWidth("18"),
+          h.Fill("none"),
+          h.Class("cursor-pointer"),
+          h.DataAttribute("graph-edge-id", edge.id),
+        ],
+        [],
+      ),
+      h.path(
+        [
+          h.D(edgePath(sourcePort(source), targetPort(target))),
+          h.Stroke(stroke),
+          h.StrokeWidth(isSelected ? "4" : "3"),
+          h.Fill("none"),
+          h.StrokeLinecap("round"),
+          h.Class("pointer-events-none drop-shadow"),
+        ],
+        [],
+      ),
+    ],
+  );
+};
+
+const connectionPreviewView = (model: Model): Html => {
+  const h = html<Message>();
+  return M.value(model.graphDrag).pipe(
+    M.tagsExhaustive({
+      NotDraggingGraph: () => null,
+      DraggingGraphNode: () => null,
+      DraggingPaletteNode: () => null,
+      ConnectingGraphEdge: ({ sourceNodeId, x, y }) =>
+        pipe(
+          graphNodeById(model.graphNodes, sourceNodeId),
+          Option.match({
+            onNone: () => null,
+            onSome: (source) =>
+              h.path(
+                [
+                  h.D(edgePath(sourcePort(source), { x, y })),
+                  h.Stroke("#facc15"),
+                  h.StrokeWidth("3"),
+                  h.Fill("none"),
+                  h.StrokeLinecap("round"),
+                  h.StrokeDasharray("8 8"),
+                ],
+                [],
+              ),
+          }),
+        ),
+    }),
+  );
+};
+
+const graphEdgeLayerView = (model: Model): Html => {
+  const h = html<Message>();
+  return h.svg(
+    [
+      h.ViewBox(`0 0 ${GRAPH_SURFACE_WIDTH} ${GRAPH_SURFACE_HEIGHT}`),
+      h.Width(`${GRAPH_SURFACE_WIDTH}`),
+      h.Height(`${GRAPH_SURFACE_HEIGHT}`),
+      h.Class("absolute inset-0 z-10"),
+    ],
+    [...model.graphEdges.map((edge) => edgeView(model, edge)), connectionPreviewView(model)],
+  );
+};
+
+const graphNodeView = (model: Model, node: GraphNode): Html => {
+  const h = html<Message>();
+  const isGesture = node.kind === "Gesture";
+  return h.keyed("div")(
+    node.id,
+    [
+      h.DataAttribute("graph-node-id", node.id),
+      h.Style(graphNodeStyle(node)),
+      h.Class(
+        `absolute z-20 select-none rounded p-3 text-left ${graphNodeClass(node)} cursor-grab active:cursor-grabbing`,
+      ),
+    ],
+    [
+      h.div(
+        [h.Class("text-[9px] font-medium uppercase tracking-widest text-slate-600")],
+        [isGesture ? "gesture" : "surface"],
+      ),
+      h.div([h.Class("mt-1.5 truncate text-sm font-medium text-slate-200")], [node.label]),
+      h.div([h.Class("mt-0.5 truncate text-xs text-slate-600")], [graphNodeDetail(model, node)]),
+      h.button(
+        [
+          h.Type("button"),
+          h.DataAttribute("graph-remove-node-id", node.id),
+          h.OnClick(RemovedGraphNode({ nodeId: node.id })),
+          h.Class(
+            "absolute right-1.5 top-1.5 z-30 grid size-4 place-items-center rounded text-[10px] text-slate-700 hover:text-slate-300",
+          ),
+        ],
+        ["×"],
+      ),
+      h.button(
+        [
+          h.Type("button"),
+          h.DataAttribute("graph-handle-node-id", node.id),
+          h.Class(
+            isGesture
+              ? "absolute -right-2 top-1/2 z-30 size-4 -translate-y-1/2 rounded-full border border-[#0a1828] bg-sky-600/70"
+              : "absolute -left-2 top-1/2 z-30 size-4 -translate-y-1/2 rounded-full border border-[#0d0e1e] bg-violet-600/70",
+          ),
+        ],
+        [],
+      ),
+    ],
+  );
+};
+
+const graphPreviewNodeView = (drag: typeof DraggingPaletteNode.Type): Html => {
+  const h = html<Message>();
+  if (!drag.isInside) {
+    return null;
+  }
+  return h.div(
+    [
+      h.Style({
+        left: `${drag.x - GRAPH_NODE_WIDTH / 2}px`,
+        top: `${drag.y - GRAPH_NODE_HEIGHT / 2}px`,
+        width: `${GRAPH_NODE_WIDTH}px`,
+        height: `${GRAPH_NODE_HEIGHT}px`,
+      }),
+      h.Class(
+        "pointer-events-none absolute z-30 rounded-2xl border border-dashed border-yellow-300 bg-yellow-300/10 p-3 text-sm text-yellow-100",
+      ),
+    ],
+    [drag.label],
+  );
+};
+
+const graphDragPreviewView = (model: Model): Html =>
+  M.value(model.graphDrag).pipe(
+    M.tagsExhaustive({
+      NotDraggingGraph: () => null,
+      DraggingGraphNode: () => null,
+      ConnectingGraphEdge: () => null,
+      DraggingPaletteNode: graphPreviewNodeView,
+    }),
+  );
+
+const selectedRuleInspectorView = (model: Model): Html => {
+  const h = html<Message>();
+  return pipe(
+    selectedRule(model),
+    Option.match({
+      onNone: () =>
+        h.aside(
+          [
+            h.Class(
+              "rounded border border-dashed border-[#1a2533] p-3 text-xs text-slate-600",
+            ),
+          ],
+          ["Click an edge to edit its rule, or drag from a gesture handle to connect."],
+        ),
+      onSome: (rule) =>
+        h.aside(
+          [h.Class("space-y-3 rounded border border-[#1a2533] p-3")],
+          [
+            h.div([h.Class("font-mono text-xs text-slate-400")], [rule.id]),
+            h.div([h.Class("text-xs text-slate-600")], [`when ${rule.when}`]),
+            h.div(
+              [h.Class("space-y-2")],
+              [
+                Ui.Select.view<Message>({
+                  id: `canvas-rule-${rule.id}-surface`,
+                  value: rule.surface,
+                  onChange: (surface) => SelectedRuleSurface({ ruleId: rule.id, surface }),
+                  toView: (attributes) =>
+                    h.select(
+                      [
+                        ...attributes.select,
+                        h.Class(
+                          "w-full rounded border border-[#1a2533] bg-[#080e18] px-2 py-1.5 text-xs text-slate-300",
+                        ),
+                      ],
+                      surfaceOptions(rule, model.controlSurfaces).map((surface) =>
+                        h.option([h.Value(surface)], [surface]),
+                      ),
+                    ),
+                }),
+                Ui.Select.view<Message>({
+                  id: `canvas-rule-${rule.id}-capability`,
+                  value: rule.capability,
+                  onChange: (capability) => SelectedRuleCapability({ ruleId: rule.id, capability }),
+                  toView: (attributes) =>
+                    h.select(
+                      [
+                        ...attributes.select,
+                        h.Class(
+                          "w-full rounded border border-[#1a2533] bg-[#080e18] px-2 py-1.5 text-xs text-slate-300",
+                        ),
+                      ],
+                      capabilityOptions(rule, model.controlSurfaces).map((capability) =>
+                        h.option([h.Value(capability)], [capability]),
+                      ),
+                    ),
+                }),
+              ],
+            ),
+            h.div(
+              [h.Class("rounded bg-black/20 p-2 font-mono text-[11px] text-slate-600")],
+              [fieldsText(rule)],
+            ),
+            ...pipe(
+              selectedEdge(model),
+              Option.match({
+                onNone: () => [],
+                onSome: (edge) => [
+                  h.button(
+                    [
+                      h.Type("button"),
+                      h.OnClick(DisconnectedGraphEdge({ edgeId: edge.id })),
+                      h.Class(
+                        "w-full rounded border border-[#1a2533] px-2 py-1.5 text-left text-xs text-slate-600 hover:border-red-900/60 hover:text-red-400",
+                      ),
+                    ],
+                    ["Disconnect"],
+                  ),
+                ],
+              }),
+            ),
+          ],
+        ),
+    }),
+  );
+};
+
+const nodeBoardView = (model: Model): Html => {
+  const h = html<Message>();
+  return h.section(
+    [h.Class("min-w-0 flex-1 rounded border border-[#1a2533] bg-[#0c1118] p-3")],
+    [
+      h.div(
+        [h.Class("grid gap-3 xl:grid-cols-[minmax(0,1fr)_260px]")],
+        [
+          h.div(
+            [
+              h.OnMount(TrackGraphSurface()),
+              h.Class(
+                "relative overflow-auto rounded border border-[#1a2533] bg-[#080e18] bg-[radial-gradient(circle,#1a2535_1px,transparent_1px)] [background-size:20px_20px]",
+              ),
+            ],
+            [
+              h.div(
+                [
+                  h.Style({
+                    width: `${GRAPH_SURFACE_WIDTH}px`,
+                    height: `${GRAPH_SURFACE_HEIGHT}px`,
+                  }),
+                  h.Class("relative"),
+                ],
+                [
+                  graphEdgeLayerView(model),
+                  ...model.graphNodes.map((node) => graphNodeView(model, node)),
+                  graphDragPreviewView(model),
+                ],
+              ),
+            ],
+          ),
+          selectedRuleInspectorView(model),
+        ],
+      ),
+    ],
+  );
+};
+
+const nodeEditorView = (model: Model): Html => {
   const h = html<Message>();
   return h.div(
-    [h.Class("mt-2 space-y-1")],
-    [
-      h.div([h.Class("text-slate-400")], ["gesture rules"]),
-      ...model.rules.map((rule) => ruleLine(rule, model.controlSurfaces)),
-    ],
+    [h.Class("flex w-full max-w-[1500px] flex-col gap-4 xl:flex-row")],
+    [nodePaletteView(model), nodeBoardView(model)],
   );
 };
 
 const panelView = (model: Model): Html => {
   const h = html<Message>();
   return h.div(
-    [h.Class("w-[640px] font-mono text-xs leading-relaxed text-[#93a4b8] whitespace-pre-wrap")],
+    [
+      h.Class(
+        "w-full max-w-[640px] font-mono text-xs leading-relaxed text-[#93a4b8] whitespace-pre-wrap",
+      ),
+    ],
     [
       defsLine(model.defs),
       socketLine(model.socket, model.controlSurfaces),
-      rulesView(model),
       ...pipe(
         model.maybeFrameError,
         Option.match({
@@ -1244,32 +2177,98 @@ const stageView = (model: Model): Html => {
   );
 };
 
+const contextMenuView = (model: Model): Html => {
+  const h = html<Message>();
+  return pipe(
+    model.maybeContextMenu,
+    Option.match({
+      onNone: () => null,
+      onSome: (menu) =>
+        h.div(
+          [h.Class("fixed inset-0 z-40")],
+          [
+            h.div([h.Class("absolute inset-0"), h.OnClick(ClosedContextMenu())], []),
+            h.div(
+              [
+                h.Style({ left: `${menu.x}px`, top: `${menu.y}px` }),
+                h.Class(
+                  "absolute z-50 min-w-36 overflow-hidden rounded border border-[#1a2533] bg-[#0c1520] py-0.5 shadow-xl",
+                ),
+              ],
+              M.value(menu as ContextMenuState).pipe(
+                M.tagsExhaustive({
+                  NodeContextMenu: ({ nodeId }) => [
+                    h.button(
+                      [
+                        h.Type("button"),
+                        h.OnClick(RemovedGraphNode({ nodeId })),
+                        h.Class(
+                          "w-full px-3 py-1.5 text-left text-xs text-slate-400 hover:bg-[#131e2e] hover:text-slate-200",
+                        ),
+                      ],
+                      ["Remove node"],
+                    ),
+                  ],
+                  EdgeContextMenu: ({ edgeId }) => [
+                    h.button(
+                      [
+                        h.Type("button"),
+                        h.OnClick(DisconnectedGraphEdge({ edgeId })),
+                        h.Class(
+                          "w-full px-3 py-1.5 text-left text-xs text-slate-400 hover:bg-[#131e2e] hover:text-slate-200",
+                        ),
+                      ],
+                      ["Disconnect"],
+                    ),
+                  ],
+                }),
+              ),
+            ),
+          ],
+        ),
+    }),
+  );
+};
+
 export const view = (model: Model): Document => {
   const h = html<Message>();
   return {
     title: "Gesture Lab",
     body: h.div(
+      [h.Class("min-h-screen bg-[#0c1118] p-4 text-[#c8d3de] font-sans sm:p-6")],
       [
-        h.Class(
-          "min-h-screen flex flex-col items-center gap-3 p-6 bg-[#0c1118] text-[#e7edf4] font-sans",
-        ),
-      ],
-      [
-        h.h1([h.Class("text-lg font-semibold")], ["Gesture Lab"]),
-        stageView(model),
-        statusView(model),
-        panelView(model),
-        h.div(
-          [h.Class("text-xs text-slate-500")],
+        h.header(
+          [h.Class("mx-auto mb-4 flex w-full max-w-[1500px] items-center justify-between")],
           [
-            "press ",
-            h.b([], ["r"]),
-            " or ",
-            h.button(
-              [h.OnClick(ClickedReloadDefs()), h.Class("underline cursor-pointer")],
-              ["reload"],
+            h.span([h.Class("text-sm font-medium text-slate-400")], ["Gesture Lab"]),
+            statusView(model),
+          ],
+        ),
+        contextMenuView(model),
+        h.main(
+          [h.Class("mx-auto grid w-full max-w-[1500px] gap-4 2xl:grid-cols-[640px_minmax(0,1fr)]")],
+          [
+            h.section(
+              [h.Class("flex flex-col items-start gap-3")],
+              [
+                stageView(model),
+                panelView(model),
+                h.div(
+                  [h.Class("text-xs text-slate-600")],
+                  [
+                    "press ",
+                    h.b([], ["r"]),
+                    " or ",
+                    h.button(
+                      [h.OnClick(ClickedReloadDefs()), h.Class("underline cursor-pointer")],
+                      ["reload"],
+                    ),
+                    " to reload gesture defs",
+                  ],
+                ),
+              ],
             ),
-            " to reload gesture definitions",
+            nodeEditorView(model),
           ],
         ),
       ],

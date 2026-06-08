@@ -6,6 +6,9 @@
 //   hide <id>                   hide ring <id>
 //   hideall                     hide every ring
 //   click <nx> <ny>             post a left click at normalized coords (and flash)
+//   mouse-down <nx> <ny>        press the left mouse button at normalized coords
+//   mouse-drag <nx> <ny>        drag the held left mouse button to normalized coords
+//   mouse-up <nx> <ny>          release the left mouse button at normalized coords
 import AppKit
 
 struct Ring {
@@ -57,13 +60,25 @@ let view = RingView(frame: NSRect(origin: .zero, size: frame.size))
 window.contentView = view
 window.orderFrontRegardless()
 
-func click(at p: CGPoint) {
+func postMouse(_ type: CGEventType, at p: CGPoint) {
   // p in Quartz global coords (top-left origin)
+  CGEvent(
+    mouseEventSource: nil, mouseType: type,
+    mouseCursorPosition: p, mouseButton: .left
+  )?.post(tap: .cghidEventTap)
+}
+
+func screenPoint(nx: Double, ny: Double) -> CGPoint {
+  CGPoint(x: frame.width * nx, y: frame.height * ny)
+}
+
+func viewPoint(nx: Double, ny: Double) -> CGPoint {
+  CGPoint(x: frame.width * nx, y: frame.height * (1 - ny))
+}
+
+func click(at p: CGPoint) {
   for type in [CGEventType.leftMouseDown, .leftMouseUp] {
-    CGEvent(
-      mouseEventSource: nil, mouseType: type,
-      mouseCursorPosition: p, mouseButton: .left
-    )?.post(tap: .cghidEventTap)
+    postMouse(type, at: p)
   }
 }
 
@@ -96,14 +111,29 @@ DispatchQueue.global().async {
         guard parts.count == 3,
           let nx = Double(parts[1]), let ny = Double(parts[2])
         else { return }
-        view.flash = CGPoint(x: frame.width * nx, y: frame.height * (1 - ny))
+        view.flash = viewPoint(nx: nx, ny: ny)
         view.needsDisplay = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
           view.flash = nil
           view.needsDisplay = true
         }
         // Quartz global coords: top-left origin, no flip
-        click(at: CGPoint(x: frame.width * nx, y: frame.height * ny))
+        click(at: screenPoint(nx: nx, ny: ny))
+      case "mouse-down":
+        guard parts.count == 3,
+          let nx = Double(parts[1]), let ny = Double(parts[2])
+        else { return }
+        postMouse(.leftMouseDown, at: screenPoint(nx: nx, ny: ny))
+      case "mouse-drag":
+        guard parts.count == 3,
+          let nx = Double(parts[1]), let ny = Double(parts[2])
+        else { return }
+        postMouse(.leftMouseDragged, at: screenPoint(nx: nx, ny: ny))
+      case "mouse-up":
+        guard parts.count == 3,
+          let nx = Double(parts[1]), let ny = Double(parts[2])
+        else { return }
+        postMouse(.leftMouseUp, at: screenPoint(nx: nx, ny: ny))
       default:
         break
       }

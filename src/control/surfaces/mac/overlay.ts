@@ -73,7 +73,7 @@ export const makeMacSurface: Effect.Effect<ControlSurface, OverlayBuildError, Sc
       activate: Effect.asVoid(ensureRunning),
       reset: command("hideall"),
       capabilities: [
-        // Draw (or move) a ring. Coordinates are pixels.
+        // Draw (or move) a ring. Coordinates are normalized screen positions.
         capability(
           "circle",
           {
@@ -88,9 +88,19 @@ export const makeMacSurface: Effect.Effect<ControlSurface, OverlayBuildError, Sc
         capability("hide", { id: Schema.String }, ({ id }) => command(`hide ${id}`)),
         // Remove every ring.
         capability("hideall", {}, () => command("hideall")),
-        // Post a real click at pixel coordinates.
+        // Post a real click at normalized screen coordinates.
         capability("click", { x: Schema.Finite, y: Schema.Finite }, ({ x, y }) =>
           command(`click ${x} ${y}`),
+        ),
+        // Hold, drag, and release the left mouse button at normalized screen positions.
+        capability("mouse-down", { x: Schema.Finite, y: Schema.Finite }, ({ x, y }) =>
+          command(`mouse-down ${x} ${y}`),
+        ),
+        capability("mouse-drag", { x: Schema.Finite, y: Schema.Finite }, ({ x, y }) =>
+          command(`mouse-drag ${x} ${y}`),
+        ),
+        capability("mouse-up", { x: Schema.Finite, y: Schema.Finite }, ({ x, y }) =>
+          command(`mouse-up ${x} ${y}`),
         ),
       ],
     };
